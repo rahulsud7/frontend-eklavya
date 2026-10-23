@@ -12,7 +12,8 @@ import {
   Sparkles,
   Zap,
   Activity,
-  Check
+  Check,
+  Stethoscope
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -128,6 +129,15 @@ export const ServerBar: React.FC<ServerBarProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => setShowMonitorModal(true)}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-400 text-[#1E3B2A] hover:bg-amber-300 font-extrabold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Test all 6 backend endpoints and diagnose errors"
+            >
+              <Stethoscope className="w-3 h-3 text-[#1E3B2A]" />
+              <span>Backend Doctor</span>
+            </button>
+            <button
+              type="button"
               onClick={() => handleConnect(currentUrl)}
               disabled={isConnecting}
               className="text-[11px] px-2 py-1 rounded-lg bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 transition-colors flex items-center gap-1 cursor-pointer"
@@ -140,7 +150,7 @@ export const ServerBar: React.FC<ServerBarProps> = ({
               onClick={() => setIsCollapsed(false)}
               className="text-[11px] text-amber-300 hover:text-white flex items-center gap-0.5 font-bold cursor-pointer"
             >
-              <span>Server Settings</span>
+              <span>Settings</span>
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -250,11 +260,11 @@ export const ServerBar: React.FC<ServerBarProps> = ({
               <button
                 type="button"
                 onClick={() => setShowMonitorModal(true)}
-                className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-stone-200 flex items-center gap-1 border border-white/10 cursor-pointer transition-colors"
-                title="Open API monitor and schema docs"
+                className="text-[11px] font-extrabold px-3 py-1.5 rounded-xl bg-amber-400 text-[#1E3B2A] hover:bg-amber-300 flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                title="Run live diagnostic suite on all 6 FastAPI endpoints"
               >
-                <Activity className="w-3 h-3 text-amber-300" />
-                <span className="hidden md:inline">Inspect Logs</span>
+                <Stethoscope className="w-3.5 h-3.5 text-[#1E3B2A]" />
+                <span>Backend Doctor</span>
               </button>
 
               <button

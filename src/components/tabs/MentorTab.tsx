@@ -17,7 +17,9 @@ import {
   Square,
   ArrowRight,
   GitFork,
-  MessageSquare
+  MessageSquare,
+  AlertCircle,
+  Stethoscope
 } from 'lucide-react';
 import { ChatMessage, LanguageMode, DocumentItem } from '../../types';
 import { FormattedMessage } from '../FormattedMessage';
@@ -25,6 +27,7 @@ import { queryMentorApi } from '../../services/api';
 import { GuruAvatar3D } from '../GuruAvatar3D';
 import { AudioWaveform } from '../AudioWaveform';
 import { ConceptMap } from '../ConceptMap';
+import { BackendMonitorModal } from '../BackendMonitorModal';
 
 interface MentorTabProps {
   userId: string;
@@ -72,6 +75,7 @@ What specific theorem or chapter topic in ${activeSubject} is challenging you to
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isListeningInChat, setIsListeningInChat] = useState<boolean>(false);
   const [selectedSourceDetail, setSelectedSourceDetail] = useState<{ source: string; excerpt: string } | null>(null);
+  const [showBackendModal, setShowBackendModal] = useState<boolean>(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -177,7 +181,8 @@ What specific theorem or chapter topic in ${activeSubject} is challenging you to
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         sources: res.sources,
         subject: activeSubject,
-        doc_id: activeDocId
+        doc_id: activeDocId,
+        backendStatus: res.backendStatus
       };
 
       setMessages(prev => [...prev, mentorMessage]);
@@ -436,9 +441,38 @@ Please review your inquiry parameters and retry!
                     />
                   )}
 
+                  {/* Live Backend Connection Status Badge */}
+                  {msg.role === 'mentor' && msg.backendStatus && (
+                    <div className="mt-3 pt-2.5 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      {msg.backendStatus.isLive ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          Live FastAPI Backend ({msg.backendStatus.serverUrl.replace(/^https?:\/\//, '')}) · {msg.backendStatus.latencyMs}ms
+                        </span>
+                      ) : (
+                        <div className="w-full flex flex-wrap items-center justify-between gap-2 bg-amber-50/90 border border-amber-200 rounded-xl px-2.5 py-1.5 text-amber-900 text-[11px]">
+                          <span className="inline-flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>
+                              <strong>Backend Alert:</strong> {msg.backendStatus.serverUrl.replace(/^https?:\/\//, '')} returned {msg.backendStatus.statusCode ? `HTTP ${msg.backendStatus.statusCode}` : 'Offline'}. Local NCERT knowledge base answered.
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowBackendModal(true)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[10px] transition-colors cursor-pointer"
+                          >
+                            <Stethoscope className="w-3 h-3 text-[#8C6D23]" />
+                            <span>Diagnose Server</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Action Toolbar for Mentor Messages */}
                   {msg.role === 'mentor' && (
-                    <div className="mt-4 pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="mt-3 pt-2.5 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                       {/* RAG Sources */}
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="flex items-center gap-1.5 text-stone-500 text-[11px] flex-wrap">
@@ -676,6 +710,16 @@ Please review your inquiry parameters and retry!
             </div>
           </div>
         </div>
+      )}
+
+      {/* Live Backend Connection Diagnostic Modal */}
+      {showBackendModal && (
+        <BackendMonitorModal
+          isOpen={showBackendModal}
+          onClose={() => setShowBackendModal(false)}
+          isBackendConnected={true}
+          onStatusChange={() => {}}
+        />
       )}
     </div>
   );

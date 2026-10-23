@@ -4,6 +4,7 @@ import { UserProfile } from '../../types';
 import { onboardUserApi } from '../../services/api';
 import { ActivityLogTimeline } from '../ActivityLogTimeline';
 import { Badges } from '../Badges';
+import { LearningActivityChart } from '../LearningActivityChart';
 
 interface ProfileTabProps {
   user: UserProfile;
@@ -107,6 +108,9 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Visual Learning Activity Chart (recharts) showing daily XP growth over the past week */}
+      <LearningActivityChart user={user} />
 
       {/* Earned Badges & Achievements Component */}
       <Badges user={user} onGrantXp={onGrantXp} />

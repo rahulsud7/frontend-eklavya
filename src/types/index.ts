@@ -31,6 +31,13 @@ export interface ChatMessage {
   sources?: string[];
   doc_id?: string | null;
   subject?: string;
+  backendStatus?: {
+    isLive: boolean;
+    serverUrl: string;
+    statusCode?: number;
+    latencyMs?: number;
+    errorNote?: string;
+  };
 }
 
 export interface QuizQuestion {

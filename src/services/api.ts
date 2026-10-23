@@ -441,6 +441,238 @@ export const deleteDocumentApi = async (docId: string): Promise<{ status: string
   return { status: 'success' };
 };
 
+export interface EndpointDiagnostic {
+  name: string;
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PATCH';
+  status: 'online' | 'server_error' | 'unreachable';
+  statusCode?: number;
+  latencyMs: number;
+  message: string;
+  responsePreview?: string;
+  suggestedFix?: string;
+}
+
+export const runFullBackendDiagnostics = async (customBaseUrl?: string): Promise<EndpointDiagnostic[]> => {
+  const baseUrl = (customBaseUrl || getApiBaseUrl()).trim().replace(/\/$/, '');
+  const results: EndpointDiagnostic[] = [];
+
+  // 1. Root Ping: GET /
+  {
+    const start = Date.now();
+    try {
+      const res = await axios.get(`${baseUrl}/`, { timeout: 5000 });
+      results.push({
+        name: 'Root Health Ping',
+        endpoint: 'GET /',
+        method: 'GET',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'Server is reachable and responding with online status.',
+        responsePreview: JSON.stringify(res.data)
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'Root Health Ping',
+        endpoint: 'GET /',
+        method: 'GET',
+        status: code ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code ? `Server responded with HTTP ${code}` : 'Network error / Server unreachable / Mixed content block',
+        responsePreview: err?.message,
+        suggestedFix: !code ? 'Check if server is running, or if on HTTPS preview, ensure backend has valid HTTPS (e.g. Render/ngrok).' : undefined
+      });
+    }
+  }
+
+  // 2. User Sync: POST /api/user/sync
+  {
+    const start = Date.now();
+    try {
+      const res = await axios.post(`${baseUrl}/api/user/sync`, {
+        user_id: 'diag_student_1',
+        name: 'Diagnostic Student'
+      }, { timeout: 5000 });
+      results.push({
+        name: 'User Profile Sync',
+        endpoint: 'POST /api/user/sync',
+        method: 'POST',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'FastAPI successfully synced student profile state.',
+        responsePreview: JSON.stringify(res.data)
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'User Profile Sync',
+        endpoint: 'POST /api/user/sync',
+        method: 'POST',
+        status: code === 500 ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code ? `HTTP ${code} on sync` : err?.message,
+        responsePreview: String(err?.response?.data || err?.message)
+      });
+    }
+  }
+
+  // 3. User Onboard: POST /api/user/onboard
+  {
+    const start = Date.now();
+    try {
+      const res = await axios.post(`${baseUrl}/api/user/onboard`, {
+        user_id: 'diag_student_1',
+        class_grade: 'Class 10',
+        course_type: 'School',
+        board: 'CBSE',
+        subjects: ['Mathematics', 'Science']
+      }, { timeout: 5000 });
+      results.push({
+        name: 'Curriculum Onboarding',
+        endpoint: 'POST /api/user/onboard',
+        method: 'POST',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'Onboarding data validated and saved to backend.',
+        responsePreview: JSON.stringify(res.data)
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'Curriculum Onboarding',
+        endpoint: 'POST /api/user/onboard',
+        method: 'POST',
+        status: code === 500 ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code ? `HTTP ${code}` : err?.message,
+        responsePreview: String(err?.response?.data || err?.message)
+      });
+    }
+  }
+
+  // 4. Documents: GET /api/documents/{user_id}
+  {
+    const start = Date.now();
+    try {
+      const res = await axios.get(`${baseUrl}/api/documents/diag_student_1`, { timeout: 5000 });
+      results.push({
+        name: 'Document Vault Query',
+        endpoint: 'GET /api/documents/{user_id}',
+        method: 'GET',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'Database query executed; documents array returned.',
+        responsePreview: JSON.stringify(res.data)
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'Document Vault Query',
+        endpoint: 'GET /api/documents/{user_id}',
+        method: 'GET',
+        status: code === 500 ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code ? `HTTP ${code}` : err?.message,
+        responsePreview: String(err?.response?.data || err?.message)
+      });
+    }
+  }
+
+  // 5. Query / LLM: POST /api/query
+  {
+    const start = Date.now();
+    try {
+      const res = await axios.post(`${baseUrl}/api/query`, {
+        user_id: 'diag_student_1',
+        subject: 'Mathematics',
+        query: 'What is Pythagoras theorem?'
+      }, { timeout: 10000 });
+      results.push({
+        name: 'AI Mentor RAG Query',
+        endpoint: 'POST /api/query',
+        method: 'POST',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'LLM generated active-recall response via backend pipeline.',
+        responsePreview: JSON.stringify(res.data).slice(0, 150) + '...'
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'AI Mentor RAG Query',
+        endpoint: 'POST /api/query',
+        method: 'POST',
+        status: code === 500 ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code === 500
+          ? 'FastAPI threw HTTP 500 (Internal Server Error)'
+          : `Connection error (${err?.message})`,
+        responsePreview: String(err?.response?.data || err?.message),
+        suggestedFix: code === 500
+          ? 'On Render dashboard -> Environment: Add GROQ_API_KEY, GEMINI_API_KEY, and SUPABASE credentials so FastAPI can query the model.'
+          : undefined
+      });
+    }
+  }
+
+  // 6. Upload: POST /api/upload
+  {
+    const start = Date.now();
+    try {
+      const dummyBlob = new Blob(['%PDF-1.4 sample diagnostic'], { type: 'application/pdf' });
+      const formData = new FormData();
+      formData.append('user_id', 'diag_student_1');
+      formData.append('subject', 'Mathematics');
+      formData.append('file', dummyBlob, 'diag_test.pdf');
+
+      const res = await axios.post(`${baseUrl}/api/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 10000
+      });
+      results.push({
+        name: 'PDF Vector Ingestion',
+        endpoint: 'POST /api/upload',
+        method: 'POST',
+        status: 'online',
+        statusCode: res.status,
+        latencyMs: Date.now() - start,
+        message: 'Document received and chunk vectors written.',
+        responsePreview: JSON.stringify(res.data)
+      });
+    } catch (err: any) {
+      const code = err?.response?.status;
+      results.push({
+        name: 'PDF Vector Ingestion',
+        endpoint: 'POST /api/upload',
+        method: 'POST',
+        status: code === 500 ? 'server_error' : 'unreachable',
+        statusCode: code,
+        latencyMs: Date.now() - start,
+        message: code === 500
+          ? 'FastAPI threw HTTP 500 on upload handling'
+          : `Upload connection failed (${err?.message})`,
+        responsePreview: String(err?.response?.data || err?.message),
+        suggestedFix: code === 500
+          ? 'Ensure PDF parser / sentence-transformers / Supabase pgvector table is configured on backend.'
+          : undefined
+      });
+    }
+  }
+
+  return results;
+};
+
 // 6. AI Mentor: POST /api/query
 export const queryMentorApi = async (payload: {
   user_id: string;
@@ -449,10 +681,22 @@ export const queryMentorApi = async (payload: {
   query: string;
   language: LanguageMode;
   history?: Array<{ role: string; text: string }>;
-}): Promise<{ answer: string; sources: string[] }> => {
+}): Promise<{
+  answer: string;
+  sources: string[];
+  backendStatus?: {
+    isLive: boolean;
+    serverUrl: string;
+    statusCode?: number;
+    latencyMs: number;
+    errorNote?: string;
+  };
+}> => {
   const startTime = Date.now();
+  const baseUrl = getApiBaseUrl();
+
   try {
-    const response = await axios.post(`${getApiBaseUrl()}/api/query`, payload, {
+    const response = await axios.post(`${baseUrl}/api/query`, payload, {
       timeout: 12000
     });
     isBackendLive = true;
@@ -463,17 +707,43 @@ export const queryMentorApi = async (payload: {
       responseSummary: { answerLength: response.data?.answer?.length, sources: response.data?.sources },
       latencyMs: Date.now() - startTime
     };
-    return response.data;
-  } catch {
+    return {
+      answer: response.data.answer,
+      sources: response.data.sources || [],
+      backendStatus: {
+        isLive: true,
+        serverUrl: baseUrl,
+        statusCode: 200,
+        latencyMs: Date.now() - startTime
+      }
+    };
+  } catch (err: any) {
+    const statusCode = err?.response?.status;
+    const latency = Date.now() - startTime;
+    const errorNote = statusCode === 500
+      ? 'HTTP 500 (Internal Server Error on backend Python handler — check GROQ_API_KEY/GEMINI_API_KEY on Render)'
+      : (err?.message || 'Server Unreachable');
+
     const res = generateSimulatedPedagogicalResponse(payload.query, payload.subject, payload.language, payload.doc_id);
     lastApiDebugLog = {
-      endpoint: 'POST /api/query [Local Groq/NCERT Fallback]',
+      endpoint: `POST /api/query [${statusCode ? `HTTP ${statusCode}` : 'Offline'} Fallback]`,
       timestamp: new Date().toISOString(),
       requestPayload: payload,
-      responseSummary: { answerLength: res.answer.length, sources: res.sources },
-      latencyMs: Date.now() - startTime
+      responseSummary: { errorNote, answerLength: res.answer.length, sources: res.sources },
+      latencyMs: latency
     };
-    return res;
+
+    return {
+      answer: res.answer,
+      sources: res.sources,
+      backendStatus: {
+        isLive: false,
+        serverUrl: baseUrl,
+        statusCode,
+        latencyMs: latency,
+        errorNote
+      }
+    };
   }
 };
 
