@@ -1,0 +1,8 @@
+{
+  "name": "Project Eklavya - AI EdTech Platform",
+  "description": "Indian curriculum-aligned AI Mentor with Curriculum Vault, RAG grounding, Quiz Arena, 3D Flashcards, Career Pathways, and Live Voice Tutoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
