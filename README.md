@@ -1,7 +1,10 @@
 # 🏹 Project Eklavya — AI EdTech Platform
 
+> 🚀 **Live Application:** [https://frontend-eklavya.onrender.com/](https://frontend-eklavya.onrender.com/)
+>
 > **Indian Curriculum-Aligned 1-on-1 Academic AI Mentor with Vector RAG Grounding, Active-Recall Checkpoints, D3 Concept Maps, and Interactive Study Tools.**
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7?style=flat-square&logo=render&logoColor=black)](https://frontend-eklavya.onrender.com/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.x-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
