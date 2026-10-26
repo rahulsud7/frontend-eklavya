@@ -1,0 +1,127 @@
+{
+  "project": "Project Eklavya",
+  "version": "1.0.0",
+  "description": "Curriculum sample datasets, RAG vector chunks, and automated benchmark test cases for Indian Board curricula (CBSE/ICSE).",
+  "curriculum_sample_documents": [
+    {
+      "id": "doc_math_01",
+      "user_id": "demo-student-01",
+      "subject": "Mathematics",
+      "filename": "NCERT_Class10_Ch04_Quadratic_Equations.pdf",
+      "custom_name": "NCERT Class 10: Quadratic Equations & Roots",
+      "created_at": "2026-10-25T08:00:00Z",
+      "chunks": [
+        {
+          "chunk_id": "math_c1",
+          "content": "A quadratic equation in the variable x is an equation of the form ax² + bx + c = 0, where a, b, c are real numbers and a ≠ 0. The roots of the quadratic equation ax² + bx + c = 0 are given by the quadratic formula: x = (-b ± √(b² - 4ac)) / (2a), provided that the discriminant D = b² - 4ac ≥ 0.",
+          "concepts": ["Standard Form", "Quadratic Formula", "Discriminant", "Real Roots"]
+        },
+        {
+          "chunk_id": "math_c2",
+          "content": "Nature of Roots: The discriminant D = b² - 4ac determines the nature of the roots of ax² + bx + c = 0. Case 1: If D > 0, there are two distinct real roots. Case 2: If D = 0, there are two equal real roots (coincident roots), both equal to -b/(2a). Case 3: If D < 0, there are no real roots (the roots are complex conjugates).",
+          "concepts": ["Nature of Roots", "Discriminant Cases", "Equal Roots", "Imaginary Roots"]
+        }
+      ]
+    },
+    {
+      "id": "doc_sci_01",
+      "user_id": "demo-student-01",
+      "subject": "Science",
+      "filename": "NCERT_Class10_Ch01_Chemical_Reactions_and_Equations.pdf",
+      "custom_name": "NCERT Class 10: Chemical Reactions & Equations",
+      "created_at": "2026-10-25T08:15:00Z",
+      "chunks": [
+        {
+          "chunk_id": "sci_c1",
+          "content": "A complete chemical equation represents the reactants, products and their physical states symbolically. A chemical equation is balanced so that the numbers of atoms of each type involved in a chemical reaction are the same on the reactant and product sides of the equation. This satisfies the Law of Conservation of Mass.",
+          "concepts": ["Balancing Equations", "Law of Conservation of Mass", "Reactants and Products"]
+        },
+        {
+          "chunk_id": "sci_c2",
+          "content": "Types of Reactions: 1. Combination reaction in which two or more substances combine to form a single substance (e.g. CaO + H₂O → Ca(OH)₂). 2. Decomposition reaction: A single reactant breaks down into simpler products on heating (thermal), light (photolytic), or electricity (electrolytic). 3. Displacement reaction: A more reactive element displaces a less reactive element (e.g. Fe + CuSO₄ → FeSO₄ + Cu, where blue solution turns pale green).",
+          "concepts": ["Combination Reaction", "Thermal Decomposition", "Displacement Reaction", "Reactivity Series"]
+        }
+      ]
+    },
+    {
+      "id": "doc_sst_01",
+      "user_id": "demo-student-01",
+      "subject": "Social Science",
+      "filename": "NCERT_Class10_Ch02_Nationalism_in_India.pdf",
+      "custom_name": "NCERT Class 10: Nationalism in India & Non-Cooperation",
+      "created_at": "2026-10-25T08:30:00Z",
+      "chunks": [
+        {
+          "chunk_id": "sst_c1",
+          "content": "Mahatma Gandhi returned to India in January 1915 from South Africa, where he had successfully fought racist regimes with a novel method of mass agitation called Satyagraha. The idea of Satyagraha emphasized the power of truth and the need to search for truth. In 1917, he traveled to Champaran in Bihar to inspire peasants to struggle against oppressive indigo plantation systems, followed by Kheda in Gujarat and Ahmedabad textile mill strikes in 1918.",
+          "concepts": ["Satyagraha", "Champaran 1917", "Kheda Satyagraha", "Ahmedabad Mill Strike"]
+        },
+        {
+          "chunk_id": "sst_c2",
+          "content": "The Rowlatt Act of 1919 gave the government enormous powers to repress political activities and allowed detention of political prisoners without trial for two years. On 13 April 1919, the infamous Jallianwala Bagh incident took place in Amritsar. General Dyer blocked exit points and opened fire on the peaceful crowd, killing hundreds.",
+          "concepts": ["Rowlatt Act 1919", "Jallianwala Bagh Massacre", "General Dyer", "Amritsar"]
+        }
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "test_id": "TC_RAG_001",
+      "category": "RAG Retrieval & Derivation",
+      "subject": "Mathematics",
+      "query": "What is the condition for a quadratic equation to have real and equal roots?",
+      "expected_concepts": ["Discriminant", "b^2 - 4ac = 0", "equal roots", "-b/(2a)"],
+      "expected_active_recall": true,
+      "validation_criteria": "Response must accurately identify D = 0, state the formula for coincident roots, and supply an active-recall self-test question."
+    },
+    {
+      "test_id": "TC_RAG_002",
+      "category": "Curriculum Color Observation",
+      "subject": "Science",
+      "query": "Why does the blue color of copper sulfate fade when an iron nail is immersed in it?",
+      "expected_concepts": ["Displacement reaction", "Iron is more reactive than copper", "Ferrous sulfate", "FeSO4", "pale green"],
+      "expected_active_recall": true,
+      "validation_criteria": "Response must provide chemical equation Fe + CuSO4 -> FeSO4 + Cu and explain displacement based on reactivity series."
+    },
+    {
+      "test_id": "TC_RAG_003",
+      "category": "Historical Timeline & Cause-Effect",
+      "subject": "Social Science",
+      "query": "Explain why Mahatma Gandhi launched the Non-Cooperation Movement after 1919.",
+      "expected_concepts": ["Rowlatt Act", "Jallianwala Bagh", "Khilafat Movement", "Satyagraha"],
+      "expected_active_recall": true,
+      "validation_criteria": "Response must link Rowlatt Act, Jallianwala Bagh tragedy, and Khilafat issue to the Nagpur Congress session resolution."
+    },
+    {
+      "test_id": "TC_TOOL_001",
+      "category": "Study Tools - Flashcards",
+      "subject": "Science",
+      "tool_type": "flashcards",
+      "expected_output_structure": {
+        "chapter_title": "string",
+        "summary_points": "array of strings",
+        "flashcards": "array of objects with { front, back, tag }"
+      },
+      "validation_criteria": "Must produce strictly parseable JSON with minimum 5 flashcards in the requested language."
+    },
+    {
+      "test_id": "TC_TOOL_002",
+      "category": "Study Tools - Quiz Generation",
+      "subject": "Mathematics",
+      "tool_type": "quiz",
+      "expected_output_structure": {
+        "topic": "string",
+        "questions": "array of objects with { question, options (4), correct_index, explanation }"
+      },
+      "validation_criteria": "Must output 4 multiple-choice questions with valid 0-3 index pointer and concise derivation."
+    },
+    {
+      "test_id": "TC_EMBED_001",
+      "category": "Embedding Engine & Vector Compatibility",
+      "test_input": "Newton's second law states that rate of change of momentum is proportional to applied force",
+      "expected_dimension": 384,
+      "expected_l2_norm": 1.0,
+      "validation_criteria": "Vector length must exactly equal 384 dimensions and unit norm (|v| ≈ 1.0) for pgvector cosine compatibility."
+    }
+  ]
+}

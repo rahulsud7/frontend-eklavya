@@ -91,12 +91,20 @@ export const ServerBar: React.FC<ServerBarProps> = ({
     handleConnect(url);
   };
 
+  const isBuiltInActive =
+    !currentUrl ||
+    (typeof window !== 'undefined' && currentUrl === window.location.origin) ||
+    currentUrl.includes('localhost:3000') ||
+    currentUrl.includes('run.app');
+
   const isRenderPresetActive =
-    currentUrl.includes('project-eklavya-5yuy.onrender.com') ||
-    currentUrl === DEFAULT_RENDER_URL;
+    !isBuiltInActive &&
+    (currentUrl.includes('project-eklavya-5yuy.onrender.com') ||
+      currentUrl === DEFAULT_RENDER_URL);
 
   const isLocalhostActive =
-    currentUrl.includes('127.0.0.1:8000') || currentUrl.includes('localhost:8000');
+    !isBuiltInActive &&
+    (currentUrl.includes('127.0.0.1:8000') || currentUrl.includes('localhost:8000'));
 
   return (
     <div className="w-full bg-[#1E3B2A] text-stone-100 border-b border-[#8C6D23]/30 shadow-md transition-all select-none relative z-30">
@@ -194,7 +202,9 @@ export const ServerBar: React.FC<ServerBarProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-stone-300 leading-tight">
-                  FastAPI & Supabase pgvector endpoints for RAG query and document ingestion
+                  {isBuiltInActive
+                    ? '⚡ Integrated Server: Groq AI + Supabase pgvector synced live'
+                    : 'FastAPI & Supabase pgvector endpoints for RAG query and document ingestion'}
                 </p>
               </div>
             </div>
@@ -209,7 +219,7 @@ export const ServerBar: React.FC<ServerBarProps> = ({
                   onKeyDown={e => {
                     if (e.key === 'Enter') handleConnect();
                   }}
-                  placeholder="Enter API Base URL (e.g., https://project-eklavya-5yuy.onrender.com)"
+                  placeholder="Enter API Base URL (e.g. current origin or custom host)"
                   className="w-full text-xs font-mono px-3 py-1.5 pr-20 rounded-xl bg-black/30 border border-stone-600 text-emerald-200 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-400 transition-all"
                 />
                 <button
@@ -224,7 +234,21 @@ export const ServerBar: React.FC<ServerBarProps> = ({
               </div>
 
               {/* Quick Presets */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                <button
+                  type="button"
+                  onClick={() => handlePresetSelect(typeof window !== 'undefined' ? window.location.origin : '')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                    isBuiltInActive
+                      ? 'bg-amber-400 text-[#1E3B2A] shadow-xs'
+                      : 'bg-white/10 hover:bg-white/20 text-stone-200 border border-white/10'
+                  }`}
+                  title="Connect to self-contained server with live Groq AI + Supabase"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Built-in Backend</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handlePresetSelect(DEFAULT_RENDER_URL)}

@@ -60,6 +60,15 @@ export interface FlashcardItem {
   difficulty?: 'again' | 'hard' | 'good' | 'easy';
 }
 
+export interface CareerRoadmapStep {
+  step: number;
+  stageName: string;
+  timeframe: string;
+  title: string;
+  description: string;
+  keyMilestones: string[];
+}
+
 export interface CareerMilestone {
   id: string;
   subject: string;
@@ -71,6 +80,10 @@ export interface CareerMilestone {
   keySkills: string[];
   premierColleges: string[];
   practicalApplication: string;
+  domainTrack?: string;
+  targetExams?: string[];
+  ncertChapters?: string[];
+  roadmapSteps?: CareerRoadmapStep[];
 }
 
 export interface ConceptNode {
