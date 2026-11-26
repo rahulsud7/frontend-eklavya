@@ -48,7 +48,6 @@ export function deleteCookie(name: string): void {
 // 2. Recent Messages Cookie Storage (safely trimmed to fit ~3.5KB cookie limit)
 const RECENT_CHAT_COOKIE = 'eklavya_recent_messages';
 const LAST_QUERY_COOKIE = 'eklavya_last_query';
-const THEME_COOKIE = 'eklavya_theme';
 
 export function saveRecentMessagesToCookie(messages: RecentMessageCookieItem[]): void {
   try {
@@ -95,16 +94,5 @@ export function getLastQueryCookie(): { query: string; subject: string; time: st
   } catch {
     // ignore
   }
-  return null;
-}
-
-// 3. Theme Cookie Management
-export function saveThemeCookie(theme: 'light' | 'dark'): void {
-  setCookie(THEME_COOKIE, theme, 365);
-}
-
-export function getThemeCookie(): 'light' | 'dark' | null {
-  const val = getCookie(THEME_COOKIE);
-  if (val === 'dark' || val === 'light') return val;
   return null;
 }

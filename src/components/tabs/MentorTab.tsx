@@ -40,6 +40,7 @@ import {
   saveLastQueryCookie,
   RecentMessageCookieItem
 } from '../../services/cookies';
+import { speakTextChunked } from '../../utils/speechFormatter';
 
 interface MentorTabProps {
   userId: string;
@@ -238,6 +239,16 @@ Answer: A single reactant (lead nitrate) breaks down under heat energy into thre
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const stopSpeechRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (stopSpeechRef.current) {
+        stopSpeechRef.current();
+        stopSpeechRef.current = null;
+      }
+    };
+  }, []);
 
   const activeDoc = documents.find(d => d.id === activeDocId);
 
@@ -394,46 +405,37 @@ Please review your inquiry parameters and retry!
     }
   };
 
-  // Safe chunked speech playback
+  // Natural spoken audio playback (strips all Markdown and reads Math/Science formulas cleanly in full)
   const handleSpeak = (msgId: string, text: string) => {
     if (!('speechSynthesis' in window)) return;
 
     if (speakingMessageId === msgId) {
-      window.speechSynthesis.cancel();
+      if (stopSpeechRef.current) {
+        stopSpeechRef.current();
+        stopSpeechRef.current = null;
+      } else {
+        window.speechSynthesis.cancel();
+      }
       setSpeakingMessageId(null);
       return;
     }
 
-    window.speechSynthesis.cancel();
-    setSpeakingMessageId(msgId);
-
-    // Clean markdown and math symbols for crisp phonetic playback
-    const cleanSpeechText = text
-      .replace(/🎯\s*Active-Recall Checkpoint[\s\S]*/i, '')
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/\\\[([\s\S]*?)\\\]/g, 'Formula: $1')
-      .replace(/\$+(.*?)\$+/g, '$1')
-      .replace(/`+(.*?)`+/g, '$1')
-      .replace(/#+/g, '')
-      .replace(/\[.*?\]/g, '')
-      .replace(/c\^\{?2\}?/g, 'c squared')
-      .replace(/a\^\{?2\}?/g, 'a squared')
-      .replace(/b\^\{?2\}?/g, 'b squared')
-      .replace(/x\^\{?2\}?/g, 'x squared')
-      .trim();
-
-    const utterance = new SpeechSynthesisUtterance(cleanSpeechText.slice(0, 500));
-    if (language === 'Hindi') {
-      utterance.lang = 'hi-IN';
-    } else {
-      utterance.lang = 'en-IN';
+    if (stopSpeechRef.current) {
+      stopSpeechRef.current();
+      stopSpeechRef.current = null;
     }
-    utterance.rate = 0.95;
 
-    utterance.onend = () => setSpeakingMessageId(null);
-    utterance.onerror = () => setSpeakingMessageId(null);
-
-    window.speechSynthesis.speak(utterance);
+    setSpeakingMessageId(msgId);
+    stopSpeechRef.current = speakTextChunked(text, language, {
+      onEnd: () => {
+        setSpeakingMessageId(null);
+        stopSpeechRef.current = null;
+      },
+      onError: () => {
+        setSpeakingMessageId(null);
+        stopSpeechRef.current = null;
+      }
+    });
   };
 
   const handleCopyText = (msgId: string, text: string) => {
@@ -535,9 +537,9 @@ Please review your inquiry parameters and retry!
         ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-13rem)] min-h-[620px] bg-white/75 dark:bg-[#161D19]/90 backdrop-blur-md rounded-3xl border border-[#8C6D23]/20 dark:border-[#38483F] shadow-xl overflow-hidden relative text-left transition-colors duration-300">
+    <div className="flex flex-col h-[calc(100vh-13rem)] min-h-[620px] bg-white/75 backdrop-blur-md rounded-3xl border border-[#8C6D23]/20 shadow-xl overflow-hidden relative text-left transition-colors duration-300">
       {/* 1. Mentor Tab Header Bar with View Switcher & Chat History */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-stone-200/80 dark:border-[#2C3B30] bg-white/95 dark:bg-[#1A221E]/95">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-stone-200/80 bg-white/95">
         <div className="flex items-center gap-3">
           <GuruAvatar3D status={mentorState} size="sm" showBadge={true} />
 
@@ -545,12 +547,12 @@ Please review your inquiry parameters and retry!
           <button
             type="button"
             onClick={() => setShowHistoryDrawer(!showHistoryDrawer)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs font-bold text-[#8C6D23] dark:text-[#E6B34A] hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all cursor-pointer shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-[#8C6D23] hover:bg-amber-100 transition-all cursor-pointer shadow-2xs"
             title="View past question threads and cookie-synced history"
           >
-            <History className="w-3.5 h-3.5 text-[#B85C38] dark:text-[#E07048]" />
+            <History className="w-3.5 h-3.5 text-[#B85C38]" />
             <span>Chat History</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white dark:bg-[#141C17] text-[#284E38] dark:text-emerald-400 font-extrabold border border-amber-300/40">
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white text-[#284E38] font-extrabold border border-amber-300/40">
               {chatHistorySessions.length}
             </span>
           </button>
@@ -558,21 +560,21 @@ Please review your inquiry parameters and retry!
 
         <div className="flex items-center gap-2">
           {speakingMessageId && viewMode === 'chat' && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
               <AudioWaveform isActive={true} color="#059669" barCount={12} height={20} />
               <span>Speaking</span>
             </div>
           )}
 
           {/* View Switcher: Chat vs Concept Map (D3) */}
-          <div className="flex items-center gap-1 bg-stone-100 dark:bg-[#141B17] p-1 rounded-2xl border border-stone-200/60 dark:border-[#2C3B30] shadow-2xs">
+          <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200/60 shadow-2xs">
             <button
               type="button"
               onClick={() => setViewMode('chat')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'chat'
                   ? 'bg-[#284E38] text-white shadow-xs'
-                  : 'text-stone-600 dark:text-stone-300 hover:text-[#284E38] dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-[#1E2922]'
+                  : 'text-stone-600 hover:text-[#284E38] hover:bg-white'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
@@ -585,13 +587,13 @@ Please review your inquiry parameters and retry!
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'concept-map'
                   ? 'bg-[#284E38] text-white shadow-xs'
-                  : 'text-stone-600 dark:text-stone-300 hover:text-[#284E38] dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-[#1E2922]'
+                  : 'text-stone-600 hover:text-[#284E38] hover:bg-white'
               }`}
               title="Interactive D3.js curriculum concept network"
             >
-              <GitFork className="w-3.5 h-3.5 text-[#8C6D23] dark:text-[#E6B34A]" />
+              <GitFork className="w-3.5 h-3.5 text-[#8C6D23]" />
               <span>Concept Map (D3)</span>
-              <span className="w-2 h-2 rounded-full bg-[#8C6D23] dark:bg-amber-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-[#8C6D23] animate-pulse" />
             </button>
           </div>
 
@@ -600,7 +602,7 @@ Please review your inquiry parameters and retry!
             <button
               type="button"
               onClick={handleStartNewChat}
-              className="text-xs text-stone-600 dark:text-stone-300 hover:text-[#284E38] dark:hover:text-emerald-400 flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-stone-100 dark:hover:bg-[#1E2922] border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer"
+              className="text-xs text-stone-600 hover:text-[#284E38] flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-stone-100 border border-stone-200 transition-colors cursor-pointer"
               title="Save current chat to history and start a fresh session"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -612,7 +614,7 @@ Please review your inquiry parameters and retry!
 
       {/* 2. Body View: Chat View OR Concept Map View */}
       {viewMode === 'concept-map' ? (
-        <div className="flex-1 w-full p-3 sm:p-4 bg-[#FAF9F5]/40 dark:bg-[#121714]/40 flex flex-col min-h-0">
+        <div className="flex-1 w-full p-3 sm:p-4 bg-[#FAF9F5]/40 flex flex-col min-h-0">
           <ConceptMap
             initialSubject={activeSubject}
             onSelectConceptPrompt={handleConceptSelectPrompt}
@@ -623,15 +625,15 @@ Please review your inquiry parameters and retry!
       ) : (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
           {/* Quick Grounding Bar */}
-          <div className="px-5 py-2 bg-gradient-to-r from-[#FAF9F5] to-amber-50/60 dark:from-[#161E1A] dark:to-[#1B2520] border-b border-stone-200/60 dark:border-[#2C3B30] flex items-center justify-between text-xs">
-            <span className="text-stone-600 dark:text-stone-300 flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-[#8C6D23] dark:text-[#E6B34A]" />
-              <span>Grounded in: <strong className="text-stone-800 dark:text-stone-200">{activeDoc ? activeDoc.custom_name : `${activeSubject} NCERT Chapters`}</strong></span>
+          <div className="px-5 py-2 bg-gradient-to-r from-[#FAF9F5] to-amber-50/60 border-b border-stone-200/60 flex items-center justify-between text-xs">
+            <span className="text-stone-600 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-[#8C6D23]" />
+              <span>Grounded in: <strong className="text-stone-800">{activeDoc ? activeDoc.custom_name : `${activeSubject} NCERT Chapters`}</strong></span>
             </span>
             <button
               type="button"
               onClick={() => setViewMode('concept-map')}
-              className="font-bold text-[#8C6D23] dark:text-[#E6B34A] hover:text-[#284E38] dark:hover:text-emerald-400 flex items-center gap-1 transition-colors cursor-pointer"
+              className="font-bold text-[#8C6D23] hover:text-[#284E38] flex items-center gap-1 transition-colors cursor-pointer"
             >
               <span>Explore D3 Concept Graph</span>
               <ArrowRight className="w-3 h-3" />
@@ -639,14 +641,14 @@ Please review your inquiry parameters and retry!
           </div>
 
           {/* Messages Viewport with consistent whitespace and ambient gradient */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 bg-gradient-to-b from-[#FAF9F5]/70 via-white/85 to-[#FAF9F5]/90 dark:from-[#121614] dark:via-[#141B17] dark:to-[#121614]">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 bg-gradient-to-b from-[#FAF9F5]/70 via-white/85 to-[#FAF9F5]/90">
             {/* Session Indicator Banner with Cookies indicator */}
             <div className="flex items-center justify-center py-1">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-stone-100/90 dark:bg-[#1A221E] border border-stone-200/70 dark:border-[#2C3B30] text-[11px] text-stone-500 dark:text-stone-400 font-medium shadow-2xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#284E38] dark:bg-emerald-400" />
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-stone-100/90 border border-stone-200/70 text-[11px] text-stone-500 font-medium shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#284E38]" />
                 <span>NCERT Mentor Session · {activeSubject}</span>
                 <span aria-hidden="true">·</span>
-                <span className="flex items-center gap-1 text-[#8C6D23] dark:text-[#E6B34A] font-bold">
+                <span className="flex items-center gap-1 text-[#8C6D23] font-bold">
                   <Cookie className="w-3 h-3" />
                   <span>Synced in Cookies</span>
                 </span>
@@ -662,7 +664,7 @@ Please review your inquiry parameters and retry!
               >
                 {/* Mentor Avatar */}
                 {msg.role === 'mentor' && (
-                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#284E38] to-[#1E3B2A] dark:from-[#36684B] dark:to-[#1F3D2C] text-white flex items-center justify-center shrink-0 shadow-sm mt-1 text-sm font-bold">
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#284E38] to-[#1E3B2A] text-white flex items-center justify-center shrink-0 shadow-sm mt-1 text-sm font-bold">
                     🏹
                   </div>
                 )}
@@ -671,28 +673,28 @@ Please review your inquiry parameters and retry!
                 <div
                   className={`transition-all text-left relative group ${
                     msg.role === 'student'
-                      ? 'max-w-xl rounded-3xl rounded-tr-xs p-4 sm:p-5 bg-gradient-to-br from-[#284E38] to-[#1C3627] dark:from-[#204430] dark:to-[#183324] text-white shadow-sm shadow-[#284E38]/15'
-                      : 'max-w-3xl w-full rounded-3xl rounded-tl-xs p-5 sm:p-7 bg-white dark:bg-[#1A221E] border border-stone-200/90 dark:border-[#2C3B30] shadow-sm shadow-stone-200/50 dark:shadow-black/30 text-[#1E2922] dark:text-[#EAE8E3]'
+                      ? 'max-w-xl rounded-3xl rounded-tr-xs p-4 sm:p-5 bg-gradient-to-br from-[#284E38] to-[#1C3627] text-white shadow-sm shadow-[#284E38]/15'
+                      : 'max-w-3xl w-full rounded-3xl rounded-tl-xs p-5 sm:p-7 bg-white border border-stone-200/90 shadow-sm shadow-stone-200/50 text-[#1E2922]'
                   }`}
                 >
                   {/* Header inside bubble */}
                   <div
                     className={`flex items-center justify-between gap-4 mb-3 pb-2 border-b text-[11px] ${
-                      msg.role === 'student' ? 'border-white/10' : 'border-stone-100 dark:border-stone-800'
+                      msg.role === 'student' ? 'border-white/10' : 'border-stone-100'
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <span
                         className={`font-extrabold uppercase tracking-wider ${
-                          msg.role === 'student' ? 'text-emerald-200' : 'text-[#284E38] dark:text-emerald-400'
+                          msg.role === 'student' ? 'text-emerald-200' : 'text-[#284E38]'
                         }`}
                       >
                         {msg.role === 'student' ? 'Student' : 'Eklavya AI Mentor'}
                       </span>
                       {msg.role === 'mentor' && (
                         <>
-                          <span className="text-stone-300 dark:text-stone-600" aria-hidden="true">·</span>
-                          <span className="text-stone-500 dark:text-stone-400 font-medium">CBSE / NCERT Grounded</span>
+                          <span className="text-stone-300" aria-hidden="true">·</span>
+                          <span className="text-stone-500 font-medium">CBSE / NCERT Grounded</span>
                         </>
                       )}
                     </div>
@@ -719,14 +721,14 @@ Please review your inquiry parameters and retry!
 
                   {/* Live Backend Connection Status Badge */}
                   {msg.role === 'mentor' && msg.backendStatus && (
-                    <div className="mt-3 pt-2.5 border-t border-stone-100 dark:border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="mt-3 pt-2.5 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                       {msg.backendStatus.isLive ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                           Live FastAPI Backend ({msg.backendStatus.serverUrl.replace(/^https?:\/\//, '')}) · {msg.backendStatus.latencyMs}ms
                         </span>
                       ) : (
-                        <div className="w-full flex flex-wrap items-center justify-between gap-2 bg-amber-50/90 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-xl px-2.5 py-1.5 text-amber-900 dark:text-amber-200 text-[11px]">
+                        <div className="w-full flex flex-wrap items-center justify-between gap-2 bg-amber-50/90 border border-amber-200 rounded-xl px-2.5 py-1.5 text-amber-900 text-[11px]">
                           <span className="inline-flex items-center gap-1.5">
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                             <span>
@@ -748,18 +750,18 @@ Please review your inquiry parameters and retry!
 
                   {/* Action Toolbar for Mentor Messages */}
                   {msg.role === 'mentor' && (
-                    <div className="mt-3 pt-2.5 border-t border-stone-100 dark:border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="mt-3 pt-2.5 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                       {/* RAG Sources */}
                       {msg.sources && msg.sources.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-stone-500 dark:text-stone-400 text-[11px] flex-wrap">
-                          <Database className="w-3 h-3 text-[#8C6D23] dark:text-[#E6B34A]" />
+                        <div className="flex items-center gap-1.5 text-stone-500 text-[11px] flex-wrap">
+                          <Database className="w-3 h-3 text-[#8C6D23]" />
                           <span className="font-semibold">Textbook Grounding:</span>
                           {msg.sources.map((src, i) => (
                             <button
                               key={i}
                               type="button"
                               onClick={() => handleInspectSource(src)}
-                              className="font-mono text-[10px] text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-[#141C17] hover:bg-[#FCECD4] dark:hover:bg-amber-950/40 hover:text-[#8C6D23] px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-stone-200/60 dark:border-stone-700"
+                              className="font-mono text-[10px] text-stone-700 bg-stone-100 hover:bg-[#FCECD4] hover:text-[#8C6D23] px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-stone-200/60"
                               title="Click to inspect vector chunk excerpt"
                             >
                               {src}
@@ -776,8 +778,8 @@ Please review your inquiry parameters and retry!
                           onClick={() => handleSpeak(msg.id, msg.text)}
                           className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-colors cursor-pointer ${
                             speakingMessageId === msg.id
-                              ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300'
-                              : 'text-stone-500 dark:text-stone-400 hover:text-[#284E38] dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'text-stone-500 hover:text-[#284E38] hover:bg-stone-100'
                           }`}
                           title="Read aloud"
                         >
@@ -798,13 +800,13 @@ Please review your inquiry parameters and retry!
                         <button
                           type="button"
                           onClick={() => handleCopyText(msg.id, msg.text)}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-500 dark:text-stone-400 hover:text-[#284E38] dark:hover:text-emerald-400 px-2 py-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-500 hover:text-[#284E38] px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer"
                           title="Copy clean explanation"
                         >
                           {copiedId === msg.id ? (
                             <>
                               <Check className="w-3 h-3 text-emerald-600" />
-                              <span className="text-emerald-700 dark:text-emerald-400">Copied</span>
+                              <span className="text-emerald-700">Copied</span>
                             </>
                           ) : (
                             <>
@@ -818,10 +820,10 @@ Please review your inquiry parameters and retry!
                         <button
                           type="button"
                           onClick={() => handleSendMessage(`Can you explain that again in even simpler terms with another everyday Indian analogy?`)}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#8C6D23] dark:text-[#E6B34A] hover:text-[#284E38] px-2 py-1 rounded-lg bg-[#FCECD4]/60 dark:bg-amber-950/40 hover:bg-[#FCECD4] transition-colors cursor-pointer border border-[#8C6D23]/30 dark:border-[#8C6D23]/50"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#8C6D23] hover:text-[#284E38] px-2 py-1 rounded-lg bg-[#FCECD4]/60 hover:bg-[#FCECD4] transition-colors cursor-pointer border border-[#8C6D23]/30"
                           title="ELI5: Explain Simpler"
                         >
-                          <Lightbulb className="w-3 h-3 text-[#B85C38] dark:text-[#E07048]" />
+                          <Lightbulb className="w-3 h-3 text-[#B85C38]" />
                           <span>Simpler</span>
                         </button>
                       </div>
@@ -837,10 +839,10 @@ Please review your inquiry parameters and retry!
                 <div className="w-8 h-8 rounded-2xl bg-[#284E38] text-white flex items-center justify-center shrink-0 shadow-sm mt-1 text-xs">
                   🏹
                 </div>
-                <div className="bg-white/95 dark:bg-[#1A221E] border border-stone-200/90 dark:border-[#2C3B30] rounded-3xl p-4 rounded-bl-xs shadow-sm text-xs text-stone-600 dark:text-stone-300 flex items-center gap-3">
+                <div className="bg-white/95 border border-stone-200/90 rounded-3xl p-4 rounded-bl-xs shadow-sm text-xs text-stone-600 flex items-center gap-3">
                   <GuruAvatar3D status={mentorState} size="sm" showBadge={false} />
                   <div>
-                    <span className="font-bold text-[#284E38] dark:text-emerald-400 block">
+                    <span className="font-bold text-[#284E38] block">
                       {mentorState === 'searching'
                         ? '1. Scanning Supabase pgvector embeddings...'
                         : '2. Formulating pedagogical derivation in ' + language + '...'}
@@ -857,7 +859,7 @@ Please review your inquiry parameters and retry!
           </div>
 
           {/* Suggested Curriculum Inquiries */}
-          <div className="px-4 py-2.5 bg-stone-50/80 dark:bg-[#141C17] border-t border-stone-200/60 dark:border-[#2C3B30] overflow-x-auto flex items-center gap-2">
+          <div className="px-4 py-2.5 bg-stone-50/80 border-t border-stone-200/60 overflow-x-auto flex items-center gap-2">
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-stone-400 whitespace-nowrap shrink-0">
               CBSE Questions:
             </span>
@@ -866,17 +868,17 @@ Please review your inquiry parameters and retry!
                 key={idx}
                 type="button"
                 onClick={() => handleSendMessage(prompt)}
-                className="text-xs px-3 py-1.5 rounded-xl bg-white dark:bg-[#1A221E] border border-stone-200/80 dark:border-[#2C3B30] hover:border-[#8C6D23] text-stone-700 dark:text-stone-300 hover:text-[#284E38] dark:hover:text-emerald-400 whitespace-nowrap shrink-0 transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"
+                className="text-xs px-3 py-1.5 rounded-xl bg-white border border-stone-200/80 hover:border-[#8C6D23] text-stone-700 hover:text-[#284E38] whitespace-nowrap shrink-0 transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"
               >
                 <span>{prompt}</span>
-                <ArrowRight className="w-3 h-3 text-[#8C6D23] dark:text-[#E6B34A]" />
+                <ArrowRight className="w-3 h-3 text-[#8C6D23]" />
               </button>
             ))}
           </div>
 
           {/* Chat Input Bar with Direct Microphone */}
-          <div className="p-3 sm:p-4 bg-white dark:bg-[#1A221E] border-t border-stone-200/80 dark:border-[#2C3B30]">
-            <div className="flex items-center gap-2 bg-stone-50 dark:bg-[#141B17] border border-stone-300/80 dark:border-[#2C3B30] rounded-2xl p-2 focus-within:ring-2 focus-within:ring-[#284E38]/20 focus-within:border-[#284E38] transition-all">
+          <div className="p-3 sm:p-4 bg-white border-t border-stone-200/80">
+            <div className="flex items-center gap-2 bg-stone-50 border border-stone-300/80 rounded-2xl p-2 focus-within:ring-2 focus-within:ring-[#284E38]/20 focus-within:border-[#284E38] transition-all">
               {/* Integrated Mic Button */}
               <button
                 type="button"
@@ -884,7 +886,7 @@ Please review your inquiry parameters and retry!
                 className={`p-2 rounded-xl transition-all cursor-pointer ${
                   isListeningInChat
                     ? 'bg-[#B85C38] text-white animate-pulse'
-                    : 'text-stone-500 dark:text-stone-400 hover:text-[#284E38] dark:hover:text-emerald-400 hover:bg-stone-200/60 dark:hover:bg-stone-800'
+                    : 'text-stone-500 hover:text-[#284E38] hover:bg-stone-200/60'
                 }`}
                 title={isListeningInChat ? 'Stop listening' : 'Speak your question'}
               >
@@ -902,14 +904,14 @@ Please review your inquiry parameters and retry!
                     ? 'Listening to your voice...'
                     : `Ask any ${activeSubject} doubt in ${language}...`
                 }
-                className="flex-1 bg-transparent px-2 py-1 text-xs sm:text-sm text-stone-800 dark:text-stone-100 placeholder-stone-400 focus:outline-none"
+                className="flex-1 bg-transparent px-2 py-1 text-xs sm:text-sm text-stone-800 placeholder-stone-400 focus:outline-none"
               />
 
               <button
                 type="button"
                 onClick={() => handleSendMessage()}
                 disabled={!inputQuery.trim() || mentorState !== 'idle'}
-                className="px-4 py-2 rounded-xl bg-[#284E38] hover:bg-[#1E3B2A] dark:bg-[#346E4C] dark:hover:bg-[#28553B] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#284E38] hover:bg-[#1E3B2A] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <span>Ask</span>
                 <Send className="w-3.5 h-3.5" />
@@ -920,26 +922,26 @@ Please review your inquiry parameters and retry!
           {/* 3. CHAT HISTORY SLIDE-OVER DRAWER */}
           {showHistoryDrawer && (
             <div className="absolute inset-0 z-30 bg-black/40 backdrop-blur-2xs flex justify-end animate-in fade-in duration-200">
-              <div className="w-full max-w-sm sm:max-w-md bg-white dark:bg-[#18211C] h-full shadow-2xl border-l border-stone-200 dark:border-[#2C3B30] flex flex-col p-5 space-y-4 animate-in slide-in-from-right duration-200">
+              <div className="w-full max-w-sm sm:max-w-md bg-white h-full shadow-2xl border-l border-stone-200 flex flex-col p-5 space-y-4 animate-in slide-in-from-right duration-200">
                 {/* Drawer Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-stone-200 dark:border-[#2C3B30]">
+                <div className="flex items-center justify-between pb-3 border-b border-stone-200">
                   <div className="flex items-center gap-2">
-                    <History className="w-4 h-4 text-[#8C6D23] dark:text-[#E6B34A]" />
-                    <h3 className="text-sm font-bold text-[#284E38] dark:text-emerald-400">
+                    <History className="w-4 h-4 text-[#8C6D23]" />
+                    <h3 className="text-sm font-bold text-[#284E38]">
                       Saved Doubts & Chat History
                     </h3>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowHistoryDrawer(false)}
-                    className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+                    className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
                 {/* Cookie & Persistence Badge */}
-                <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-900/50 flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                <div className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200 flex items-center gap-2.5 text-xs text-amber-900">
                   <Cookie className="w-4 h-4 text-[#B85C38] shrink-0" />
                   <div className="leading-snug">
                     <span className="font-bold">Cookies & Local Storage Active:</span> Recent doubt messages and study context are preserved across sessions.
@@ -950,7 +952,7 @@ Please review your inquiry parameters and retry!
                 <button
                   type="button"
                   onClick={handleStartNewChat}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-[#284E38] hover:bg-[#1E3B2A] dark:bg-[#346E4C] text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-[#284E38] hover:bg-[#1E3B2A] text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Start New Conversation</span>
@@ -971,21 +973,21 @@ Please review your inquiry parameters and retry!
                       <div
                         key={session.id}
                         onClick={() => handleRestoreSession(session)}
-                        className="group p-3 rounded-2xl bg-[#FAF9F5] dark:bg-[#141B17] hover:bg-white dark:hover:bg-[#1C2620] border border-stone-200/90 dark:border-[#2C3B30] hover:border-[#8C6D23]/60 transition-all cursor-pointer shadow-2xs hover:shadow-xs flex items-start justify-between gap-2"
+                        className="group p-3 rounded-2xl bg-[#FAF9F5] hover:bg-white border border-stone-200/90 hover:border-[#8C6D23]/60 transition-all cursor-pointer shadow-2xs hover:shadow-xs flex items-start justify-between gap-2"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[9px] font-black uppercase px-2 py-0.2 rounded-full bg-[#FCECD4] dark:bg-amber-950/60 text-[#8C6D23] dark:text-amber-400">
+                            <span className="text-[9px] font-black uppercase px-2 py-0.2 rounded-full bg-[#FCECD4] text-[#8C6D23]">
                               {session.subject}
                             </span>
                             <span className="text-[10px] text-stone-400 font-mono">
                               {session.timestamp}
                             </span>
                           </div>
-                          <h4 className="text-xs font-bold text-[#1E2922] dark:text-[#EAE8E3] truncate group-hover:text-[#284E38] dark:group-hover:text-emerald-400">
+                          <h4 className="text-xs font-bold text-[#1E2922] truncate group-hover:text-[#284E38]">
                             {session.title}
                           </h4>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                          <p className="text-[11px] text-stone-500 truncate mt-0.5">
                             {session.messages.length} messages · Tap to resume
                           </p>
                         </div>
@@ -994,12 +996,12 @@ Please review your inquiry parameters and retry!
                           <button
                             type="button"
                             onClick={(e) => handleDeleteSession(session.id, e)}
-                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             title="Delete thread"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                          <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-[#284E38] dark:group-hover:text-emerald-400" />
+                          <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-[#284E38]" />
                         </div>
                       </div>
                     ))
@@ -1018,13 +1020,13 @@ Please review your inquiry parameters and retry!
           onClick={() => setSelectedSourceDetail(null)}
         >
           <div
-            className="w-full max-w-md bg-white dark:bg-[#18211C] rounded-3xl p-6 shadow-2xl border border-stone-200 dark:border-[#2C3B30] text-left animate-in fade-in zoom-in-95"
+            className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-stone-200 text-left animate-in fade-in zoom-in-95"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800 mb-3">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-3">
               <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-[#8C6D23] dark:text-[#E6B34A]" />
-                <h4 className="text-sm font-bold text-[#284E38] dark:text-emerald-400">Textbook Vector Chunk</h4>
+                <Database className="w-4 h-4 text-[#8C6D23]" />
+                <h4 className="text-sm font-bold text-[#284E38]">Textbook Vector Chunk</h4>
               </div>
               <button
                 type="button"
@@ -1039,7 +1041,7 @@ Please review your inquiry parameters and retry!
               {selectedSourceDetail.source}
             </div>
 
-            <div className="bg-[#FAF9F5] dark:bg-[#121614] p-3 rounded-2xl border border-stone-200 dark:border-stone-700 text-xs font-mono text-stone-700 dark:text-stone-300 leading-relaxed mb-4">
+            <div className="bg-[#FAF9F5] p-3 rounded-2xl border border-stone-200 text-xs font-mono text-stone-700 leading-relaxed mb-4">
               {selectedSourceDetail.excerpt}
             </div>
 
@@ -1051,7 +1053,7 @@ Please review your inquiry parameters and retry!
               <button
                 type="button"
                 onClick={() => setSelectedSourceDetail(null)}
-                className="px-4 py-1.5 rounded-xl bg-[#284E38] dark:bg-[#346E4C] text-white font-bold text-xs"
+                className="px-4 py-1.5 rounded-xl bg-[#284E38] text-white font-bold text-xs"
               >
                 Close
               </button>

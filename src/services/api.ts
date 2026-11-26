@@ -1243,23 +1243,23 @@ Which Article of the Constitution of India vests superintendence and control of 
   if (qLower.includes('pythagoras') || qLower.includes('right angle') || qLower.includes('triangle')) {
     if (language === 'Hinglish') {
       return {
-        answer: `**Namaste student!** Let us break down the **Pythagoras Theorem** in an intuitive, visual way.
+        answer: `**Namaste student!** Chaliye **Pythagoras Theorem** ko ekdum simple aur visual tareeke se samajhte hain.
 
-In any right-angled triangle (समकोण त्रिभुज):
-The square on the **hypotenuse** (कर्ण - the longest side opposite to 90°) is equal to the sum of the squares on the other two legs (base & perpendicular):
+Kisi bhi right-angled triangle mein:
+**Hypotenuse** (sabse lambi side, jo $90^\\circ$ ke opposite hoti hai) ka square, baaki dono sides (base aur perpendicular) ke squares ke sum ke barabar hota hai:
 
-$$\\mathbf{h^2 = p^2 + b^2}$$
+$$h^2 = p^2 + b^2$$
 
 ### Intuitive Analogy:
-Imagine you are walking across a rectangular cricket ground from one corner to the diagonally opposite corner. Instead of walking along length $b$ and width $p$, you walk straight through the pitch along $h$. The theorem mathematically proves this diagonal shortcut!
+Imagine karo tum ek rectangular cricket ground ke ek corner se opposite corner tak jaa rahe ho. Length $b$ aur width $p$ ke along ghoomne ke bajay, agar tum pitch ke through seedha diagonal shortcut $h$ lete ho, toh yeh theorem wahi exact shortcut length nikaalne ka formula deta hai!
 
-### Key Applications in Indian Board Exams:
-1. Solving heights & distances in trigonometry (e.g. shadow of a minar or mobile tower).
-2. Deriving the fundamental identity: **$\\sin^2\\theta + \\cos^2\\theta = 1$**.
+### Board Exam Key Applications:
+1. Trigonometry mein heights aur distances solve karna (jaise tower ya minar ki shadow).
+2. Fundamental trigonometric identity derive karna: $\\sin^2\\theta + \\cos^2\\theta = 1$.
 
 🎯 Active-Recall Checkpoint
-If a ladder 13 meters long reaches a window 12 meters above the ground, what is the distance of the foot of the ladder from the base of the wall?
-*Answer: Use $b = \\sqrt{13^2 - 12^2} = \\sqrt{169 - 144} = \\sqrt{25} = 5$ meters.*`,
+Question: Agar ek $13\\text{ m}$ lambi ladder ground se $12\\text{ m}$ upar ek window tak pahunchti hai, toh ladder ka foot wall ke base se kitni door hai?
+Answer: Formula lagao: $b = \\sqrt{13^2 - 12^2} = \\sqrt{169 - 144} = \\sqrt{25} = 5\\text{ meters}$.`,
         sources: ['NCERT Class 10 Mathematics Chapter 6: Triangles', 'Baudhayana Sulba Sutras']
       };
     } else {
@@ -1268,15 +1268,15 @@ If a ladder 13 meters long reaches a window 12 meters above the ground, what is 
 
 In every Euclidean right-angled triangle, the area of the square whose side is the hypotenuse equals the sum of the areas of the squares on the other two adjacent sides:
 
-$$\\mathbf{c^2 = a^2 + b^2}$$
+$$c^2 = a^2 + b^2$$
 
 ### Critical Applications:
 - Foundation of Cartesian coordinate distance formula: $d = \\sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}$.
 - Structural engineering load distribution and GPS satellite triangulation.
 
 🎯 Active-Recall Checkpoint
-Verify whether side lengths $(7\\text{ cm}, 24\\text{ cm}, 25\\text{ cm})$ form a valid right-angled triangle.
-*Answer: Yes, because $7^2 + 24^2 = 49 + 576 = 625 = 25^2$.*`,
+Question: Verify whether side lengths $(7\\text{ cm}, 24\\text{ cm}, 25\\text{ cm})$ form a valid right-angled triangle.
+Answer: Yes, because $7^2 + 24^2 = 49 + 576 = 625 = 25^2$.`,
         sources: ['NCERT Class 10 Mathematics Chapter 6', 'CBSE Board Mathematics Vault']
       };
     }
@@ -1290,18 +1290,18 @@ Verify whether side lengths $(7\\text{ cm}, 24\\text{ cm}, 25\\text{ cm})$ form 
 Trigonometry connects angular deflection with linear dimensional ratios in a right-angled triangle.
 
 ### Standard Ratios (P-B-P / H-H-B Mnemonic):
-- **$\\sin\\theta$** = Perpendicular / Hypotenuse
-- **$\\cos\\theta$** = Base / Hypotenuse
-- **$\\tan\\theta$** = Perpendicular / Base
+- $\\sin\\theta = \\frac{\\text{Perpendicular}}{\\text{Hypotenuse}}$
+- $\\cos\\theta = \\frac{\\text{Base}}{\\text{Hypotenuse}}$
+- $\\tan\\theta = \\frac{\\text{Perpendicular}}{\\text{Base}}$
 
 ### Mandatory Identities for Board Examinations:
-1. $\\mathbf{\\sin^2\\theta + \\cos^2\\theta = 1}$
-2. $\\mathbf{1 + \\tan^2\\theta = \\sec^2\\theta}$
-3. $\\mathbf{1 + \\cot^2\\theta = \\csc^2\\theta}$
+1. $\\sin^2\\theta + \\cos^2\\theta = 1$
+2. $1 + \\tan^2\\theta = \\sec^2\\theta$
+3. $1 + \\cot^2\\theta = \\csc^2\\theta$
 
 🎯 Active-Recall Checkpoint
-If $\\tan\\theta = \\frac{4}{3}$, evaluate $\\sin\\theta$ without drawing a protractor scale diagram.
-*Answer: $P = 4k, B = 3k \\implies H = \\sqrt{4^2+3^2} = 5k$. Hence $\\sin\\theta = \\frac{P}{H} = \\frac{4}{5}$.*`,
+Question: If $\\tan\\theta = \\frac{4}{3}$, evaluate $\\sin\\theta$ without drawing a protractor scale diagram.
+Answer: $P = 4k, B = 3k \\implies H = \\sqrt{4^2+3^2} = 5k$. Hence $\\sin\\theta = \\frac{P}{H} = \\frac{4}{5}$.`,
       sources: ['NCERT Class 10 Mathematics Chapter 8: Introduction to Trigonometry']
     };
   }
@@ -1322,8 +1322,8 @@ How does high-speed broadband reach Indian homes via **Reliance Jio Fiber** or *
 - When the incident angle exceeds the **critical angle** $\\theta_c = \\arcsin(n_2/n_1)$, **Total Internal Reflection** occurs with 0% signal leakage over hundreds of kilometers!
 
 🎯 Active-Recall Checkpoint
-What are the two mandatory conditions for Total Internal Reflection (TIR) to occur?
-*Answer: 1. Light must travel from an optically denser to a rarer medium. 2. Angle of incidence must exceed the critical angle ($i > \\theta_c$).*`,
+Question: What are the two mandatory conditions for Total Internal Reflection (TIR) to occur?
+Answer: 1. Light must travel from an optically denser to a rarer medium. 2. Angle of incidence must exceed the critical angle ($i > \\theta_c$).`,
       sources: ['NCERT Class 10 Science Chapter 10: Light Reflection & Refraction']
     };
   }
@@ -1336,19 +1336,41 @@ What are the two mandatory conditions for Total Internal Reflection (TIR) to occ
 A chemical change involves breaking existing chemical bonds between reactant atoms and forming new bonds to yield products with distinct physical and chemical properties.
 
 ### Famous Class 10 Experiment (Iron Nail in Copper Sulfate):
-$$Fe (s) + CuSO_4 (aq) \\rightarrow FeSO_4 (aq) + Cu (s)$$
-- **Observation**: The deep blue color of copper sulfate fades to light green due to the formation of ferrous sulfate ($FeSO_4$), and a reddish-brown deposit of copper coats the iron nail.
+$$\\text{Fe}(s) + \\text{CuSO}_4(aq) \\rightarrow \\text{FeSO}_4(aq) + \\text{Cu}(s)$$
+- **Observation**: The deep blue color of copper sulfate fades to light green due to the formation of ferrous sulfate ($\\text{FeSO}_4$), and a reddish-brown deposit of copper coats the iron nail.
 - **Reason**: Iron is more reactive than copper in the Reactivity Series and displaces copper from its salt solution.
 
 🎯 Active-Recall Checkpoint
-Why does the blue solution of copper sulfate turn light green when an iron nail is immersed in it?
-*Answer: Because iron displaces copper from $CuSO_4$ to form light green ferrous sulfate ($FeSO_4$).*`,
+Question: Why does the blue solution of copper sulfate turn light green when an iron nail is immersed in it?
+Answer: Because iron displaces copper from $\\text{CuSO}_4$ to form light green ferrous sulfate ($\\text{FeSO}_4$).`,
       sources: ['NCERT Class 10 Science Chapter 1: Chemical Reactions and Equations']
     };
   }
 
   // General high-quality curriculum fallback
-  const langGreeting = language === 'Hindi' ? 'नमस्ते विद्यार्थी!' : language === 'Hinglish' ? 'Hello dost!' : 'Hello student!';
+  if (language === 'Hinglish') {
+    return {
+      answer: `**Hello dost!** Chaliye **"${query}"** ko aapke **${subject}** NCERT syllabus ke hisaab se step-by-step samajhte hain.
+
+### 1. Core Concept & Definition
+Yeh topic CBSE/ICSE board exams ke liye kaafi important hai. ${subject} mein ratta maarne ke bajay concept ke basic rule ko samajhna sabse zyada score dilata hai.
+
+### 2. Systematic Breakdown
+1. **Core Law Identify Karo**: Question ko direct NCERT textbook ke main principle ya formula se connect karo.
+2. **Step-by-Step Derivation**: Har step mein given values, SI units, aur formula clearly likho.
+3. **Board Presentation Tip**: Key definitions underline karo aur jahan zaroorat ho wahan clean labeled diagram banao.
+
+🎯 Active-Recall Checkpoint
+Question: Kya aap bina book dekhe is topic ka sabse important rule ya formula yaad kar sakte ho?
+Answer: Pehle apne mind mein key principle recall karo, phir NCERT chapter se cross-check karo!`,
+      sources: [
+        `NCERT Class 10 ${subject} Curriculum Standard`,
+        'CBSE Academic Board Exemplar Vector Vault'
+      ]
+    };
+  }
+
+  const langGreeting = language === 'Hindi' ? 'नमस्ते विद्यार्थी!' : 'Hello student!';
   return {
     answer: `${langGreeting} Let us review **"${query}"** in the context of your **${subject}** syllabus.
 
@@ -1361,8 +1383,8 @@ This inquiry addresses fundamental core principles evaluated in Indian board exa
 3. **Board Presentation Strategy**: In subjective questions, highlighting key definitions, stating SI units, and drawing neatly labeled diagrams earns maximum step-marking credit.
 
 🎯 Active-Recall Checkpoint
-Can you write down the single most important definition or governing equation for this topic from memory?
-*Answer: Formulate your answer first in your mind before checking your textbook chapter!*`,
+Question: Can you write down the single most important definition or governing equation for this topic from memory?
+Answer: Formulate your answer first in your mind before checking your textbook chapter!`,
     sources: [
       `NCERT Class 10 ${subject} Curriculum Standard`,
       'CBSE Academic Board Exemplar Vector Vault'

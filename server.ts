@@ -525,31 +525,82 @@ async function startServer() {
         context = LATEST_CHUNKS_CACHE['latest'].slice(0, 3).join('\n---\n');
       }
 
+      const getLanguageDirective = (lang: string): string => {
+        const normalized = (lang || '').trim().toLowerCase();
+        if (normalized === 'hinglish') {
+          return (
+            'STRICT HINGLISH MODE: Write ONLY in Romanized Hindi mixed naturally with English using the Latin alphabet (A-Z, a-z). ' +
+            'NEVER output Devanagari / Hindi Unicode script anywhere in your answer, headings, formulas, or Active-Recall Checkpoint. ' +
+            'Example style: "Pythagoras theorem ke according, right-angled triangle mein hypotenuse ka square baaki dono sides ke squares ke sum ke equal hota hai."'
+          );
+        }
+        if (normalized === 'hindi') {
+          return 'STRICT HINDI MODE: Write naturally in Devanagari Hindi (हिन्दी), keeping standard mathematical symbols, chemical formulas, and key English technical terms in parentheses when helpful.';
+        }
+        if (normalized === 'english') {
+          return 'STRICT ENGLISH MODE: Write strictly in clear, standard academic English. Do not mix in Hindi or Devanagari words.';
+        }
+        return `Write clearly in ${lang || 'English'}.`;
+      };
+
+      const languageDirective = getLanguageDirective(language);
+
       const systemPrompt =
-        "You are 'Eklavya AI', an encouraging 1-on-1 academic mentor for Indian students. " +
-        `Preferred Output Language Mode: ${language}\n` +
-        "Rules:\n" +
+        "You are 'Eklavya AI', an encouraging 1-on-1 academic mentor for Indian students.\n" +
+        `CURRENT REQUESTED LANGUAGE MODE: ${language}\n` +
+        `${languageDirective}\n` +
+        `CRITICAL LANGUAGE OVERRIDE: You MUST respond strictly in ${language} following the rule above, EVEN IF earlier messages in the conversation history or the student's question were written in Hindi (Devanagari) or a different language. Never copy the script or language of older turns.\n` +
+        "Formatting & Pedagogical Rules:\n" +
         "1. Ground your explanation strictly in the Context when available. If textbook context is brief, provide a thorough, accurate CBSE/ICSE curriculum explanation.\n" +
-        "2. Format your response cleanly using standard Markdown with clear section headings (## and ###), bullet points, and **bold** for key concepts.\n" +
-        "3. Always conclude with an active-recall section formatted exactly as:\n\n" +
+        "2. Format your response cleanly using standard Markdown (## and ### section headings, bullet points, numbered steps, Markdown tables for comparisons, and **bold** for key concepts).\n" +
+        "3. For ALL Mathematics and Science formulas, derivations, chemical reactions, variables, and exponents, ALWAYS use standard LaTeX math delimiters: use single dollar signs $...$ (with NO spaces next to the $ signs) for inline math/chemistry (e.g., $c^2 = a^2 + b^2$, $\\text{H}_2\\text{O}$, $\\sin^2\\theta + \\cos^2\\theta = 1$), and double dollar signs $$...$$ on separate lines for display equations (e.g., $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$). Never leave raw LaTeX backslashes outside $...$ or $$...$$.\n" +
+        "4. Always conclude with an active-recall section formatted exactly as:\n\n" +
         "🎯 Active-Recall Checkpoint\n" +
-        "Question: [1 short conceptual recall question testing understanding]\n" +
-        "Answer: [Concise correct answer and 1-line derivation/explanation]";
+        "Question: [1 short conceptual recall question in the CURRENT language mode testing understanding]\n" +
+        "Answer: [Concise correct answer and 1-line derivation/explanation in the CURRENT language mode]";
 
       const messages: any[] = [{ role: 'system', content: systemPrompt }];
+      const normalizedLang = language.trim().toLowerCase();
+      const devanagariRegex = /[\u0900-\u097F]/;
 
-      if (Array.isArray(history) && history.length > 0) {
-        for (const turn of history.slice(-4)) {
-          messages.push({
-            role: turn.role === 'student' || turn.role === 'user' ? 'user' : 'assistant',
-            content: turn.text
-          });
+      const recentHistory = Array.isArray(history) ? history.slice(-4) : [];
+      const historyHasScriptMismatch = recentHistory.some((turn: any) => {
+        const isAssistant = turn.role !== 'student' && turn.role !== 'user';
+        if (!isAssistant) return false;
+        const hasDev = devanagariRegex.test(String(turn.text || ''));
+        if (normalizedLang === 'hinglish' || normalizedLang === 'english') return hasDev;
+        if (normalizedLang === 'hindi') return !hasDev;
+        return false;
+      });
+
+      let foldedHistoryNote = '';
+      if (recentHistory.length > 0) {
+        if (historyHasScriptMismatch) {
+          // Fold prior turns into a neutral reference note so the LLM never copies the old assistant script
+          foldedHistoryNote =
+            'Previous Conversation Context (TOPIC CONTINUITY ONLY — DO NOT copy the old language or script):\n' +
+            recentHistory
+              .map((t: any) => `${t.role === 'student' || t.role === 'user' ? 'Student' : 'Mentor'}: ${String(t.text || '').slice(0, 400)}`)
+              .join('\n') +
+            '\n\n';
+        } else {
+          for (const turn of recentHistory) {
+            messages.push({
+              role: turn.role === 'student' || turn.role === 'user' ? 'user' : 'assistant',
+              content: turn.text
+            });
+          }
         }
       }
 
+      const turnLanguageReminder =
+        normalizedLang === 'hinglish'
+          ? '[CRITICAL OUTPUT LANGUAGE: Hinglish — Reply strictly in Romanized Hindi + English using ONLY Latin letters (A-Z). ZERO Devanagari script, even if earlier messages were in Hindi!]'
+          : `[CRITICAL OUTPUT LANGUAGE: ${language} — Strictly follow this language mode and override any language used in previous turns.]`;
+
       messages.push({
         role: 'user',
-        content: `Context from Textbook:\n${context ? context : 'Use NCERT / Indian Board curriculum knowledge.'}\n\nStudent Question: ${query}`
+        content: `${foldedHistoryNote}Context from Textbook:\n${context ? context : 'Use NCERT / Indian Board curriculum knowledge.'}\n\nStudent Question: ${query}\n\n${turnLanguageReminder}`
       });
 
       // 2. Primary: Execute via Groq (with model fallback)
@@ -572,6 +623,32 @@ async function startServer() {
 
             answerText = completion.choices[0]?.message?.content || '';
             if (answerText.trim()) {
+              // Safeguard: if Hinglish was requested and model still leaked Devanagari, romanize once
+              if (normalizedLang === 'hinglish' && devanagariRegex.test(answerText)) {
+                try {
+                  const rewrite = await groqClient.chat.completions.create({
+                    model,
+                    messages: [
+                      {
+                        role: 'system',
+                        content:
+                          'Rewrite the following tutor explanation into natural Romanized Hinglish (Hindi written in English/Latin letters mixed with English). ' +
+                          'Preserve ALL Markdown headings, tables, bullet points, LaTeX math ($...$ and $$...$$), and the 🎯 Active-Recall Checkpoint section exactly. ' +
+                          'Output ZERO Devanagari characters.'
+                      },
+                      { role: 'user', content: answerText }
+                    ],
+                    temperature: 0.2
+                  });
+                  const rewritten = rewrite.choices[0]?.message?.content || '';
+                  if (rewritten.trim() && !devanagariRegex.test(rewritten)) {
+                    answerText = rewritten;
+                  }
+                } catch {
+                  // Keep original answer if rewrite fails
+                }
+              }
+
               res.json({
                 answer: answerText,
                 sources: matches.map(item => item.id || `NCERT ${subject} Vault chunk`)
@@ -587,7 +664,14 @@ async function startServer() {
       // 3. Secondary Backup: Gemini AI
       if (geminiAi) {
         try {
-          const prompt = `${systemPrompt}\n\nContext:\n${context}\n\nStudent Query: ${query}`;
+          const historyText = Array.isArray(history) && history.length > 0
+            ? '\n\nRecent Conversation Context (for topic continuity only; DO NOT copy its language):\n' +
+              history
+                .slice(-4)
+                .map((t: any) => `${t.role === 'student' || t.role === 'user' ? 'Student' : 'Mentor'}: ${t.text}`)
+                .join('\n')
+            : '';
+          const prompt = `${systemPrompt}${historyText}\n\nContext:\n${context}\n\nStudent Query: ${query}\n\n${turnLanguageReminder}`;
           const geminiRes = await geminiAi.models.generateContent({
             model: 'gemini-3.8-flash',
             contents: prompt
@@ -658,22 +742,26 @@ async function startServer() {
 
       const context = chunks.length > 0 ? chunks.slice(0, 4).join('\n---\n') : `General curriculum for ${subject}.`;
       const topicLabel = custom_topic ? `${subject}: ${custom_topic}` : subject;
+      const languageRule =
+        String(language).toLowerCase() === 'hinglish'
+          ? 'Hinglish (strictly Romanized Hindi + English using ONLY Latin letters A-Z, NO Devanagari script)'
+          : language;
 
       let prompt = '';
       if (tool_type === 'flashcards') {
         const cardCount = Math.min(Math.max(Number(count) || 5, 3), 10);
-        prompt = `You are an expert CBSE/ICSE curriculum teacher. Based on the topic "${topicLabel}" (Difficulty: ${difficulty}) and textbook context, generate ${cardCount} active-recall flashcards in ${language}.\nFormat as strictly valid JSON:\n{"chapter_title": "${topicLabel}", "summary_points": ["Point 1", "Point 2", "Point 3"], "flashcards": [{"front": "Conceptual recall question", "back": "Clear concise derivation or definition in ${language}", "tag": "Core Concept"}]}\nContext: ${context}`;
+        prompt = `You are an expert CBSE/ICSE curriculum teacher. Based on the topic "${topicLabel}" (Difficulty: ${difficulty}) and textbook context, generate ${cardCount} active-recall flashcards in ${languageRule}.\nFormat as strictly valid JSON:\n{"chapter_title": "${topicLabel}", "summary_points": ["Point 1", "Point 2", "Point 3"], "flashcards": [{"front": "Conceptual recall question", "back": "Clear concise derivation or definition in ${languageRule}", "tag": "Core Concept"}]}\nContext: ${context}`;
       } else if (tool_type === 'quiz') {
         const qCount = Math.min(Math.max(Number(count) || 4, 3), 10);
-        prompt = `You are an expert CBSE/ICSE exam question creator. Generate a ${qCount}-question quiz on "${topicLabel}" (Style: ${question_style}, Difficulty: ${difficulty}) in ${language}.\nFormat as strictly valid JSON:\n{"topic": "${topicLabel}", "questions": [{"question": "Question text?", "options": ["Option A", "Option B", "Option C", "Option D"], "correct_index": 0, "explanation": "Why correct in ${language} referencing curriculum."}]}\nContext: ${context}`;
+        prompt = `You are an expert CBSE/ICSE exam question creator. Generate a ${qCount}-question quiz on "${topicLabel}" (Style: ${question_style}, Difficulty: ${difficulty}) in ${languageRule}.\nFormat as strictly valid JSON:\n{"topic": "${topicLabel}", "questions": [{"question": "Question text?", "options": ["Option A", "Option B", "Option C", "Option D"], "correct_index": 0, "explanation": "Why correct in ${languageRule} referencing curriculum."}]}\nContext: ${context}`;
       } else if (tool_type === 'hint') {
-        prompt = `You are a Socratic tutor for Indian students. A student is stuck on this question:\nQuestion: "${question}"\nOptions: ${JSON.stringify(options || [])}\nGive a gentle 1-2 sentence Socratic hint in ${language} that guides their thinking without revealing the correct option directly.\nFormat as strictly valid JSON:\n{"hint": "Think about how..."}`;
+        prompt = `You are a Socratic tutor for Indian students. A student is stuck on this question:\nQuestion: "${question}"\nOptions: ${JSON.stringify(options || [])}\nGive a gentle 1-2 sentence Socratic hint in ${languageRule} that guides their thinking without revealing the correct option directly.\nFormat as strictly valid JSON:\n{"hint": "Think about how..."}`;
       } else if (tool_type === 'analogy') {
-        prompt = `You are Eklavya AI. For the concept "${concept || subject}" (Answer/Principle: "${answer || ''}"), generate a memorable, everyday Indian real-life analogy (like cricket, chai, local trains, cooking, or festive traditions) that makes this intuitive to remember.\nFormat as strictly valid JSON:\n{"analogy": "Imagine...", "key_takeaway": "So in physics/math/science..."}`;
+        prompt = `You are Eklavya AI. For the concept "${concept || subject}" (Answer/Principle: "${answer || ''}"), generate a memorable, everyday Indian real-life analogy (like cricket, chai, local trains, cooking, or festive traditions) in ${languageRule} that makes this intuitive to remember.\nFormat as strictly valid JSON:\n{"analogy": "Imagine...", "key_takeaway": "So in physics/math/science..."}`;
       } else if (tool_type === 'diagnostic') {
-        prompt = `Analyze the student's quiz results on ${subject}. Questions: ${JSON.stringify(questions || [])}, Student Answers: ${JSON.stringify(selectedAnswers || {})}.\nProvide an encouraging diagnosis in ${language}.\nFormat as strictly valid JSON:\n{"summary": "Overall assessment", "strengths": ["Strong concept 1"], "weaknesses": ["Concept to revise"], "action_plan": "Specific 1-line study instruction"}`;
+        prompt = `Analyze the student's quiz results on ${subject}. Questions: ${JSON.stringify(questions || [])}, Student Answers: ${JSON.stringify(selectedAnswers || {})}.\nProvide an encouraging diagnosis in ${languageRule}.\nFormat as strictly valid JSON:\n{"summary": "Overall assessment", "strengths": ["Strong concept 1"], "weaknesses": ["Concept to revise"], "action_plan": "Specific 1-line study instruction"}`;
       } else {
-        prompt = `Based on the context (Subject: ${subject}), create a learning roadmap and connect it to 3 Indian career paths in ${language}. Return ONLY valid JSON:\n{"roadmap_steps": [{"step": "Step 1", "detail": "Details"}], "careers": [{"role": "Career", "relevance": "Relevance", "skills": ["Skill 1"], "resources": "Free resources"}]}\nContext: ${context}`;
+        prompt = `Based on the context (Subject: ${subject}), create a learning roadmap and connect it to 3 Indian career paths in ${languageRule}. Return ONLY valid JSON:\n{"roadmap_steps": [{"step": "Step 1", "detail": "Details"}], "careers": [{"role": "Career", "relevance": "Relevance", "skills": ["Skill 1"], "resources": "Free resources"}]}\nContext: ${context}`;
       }
 
       // Call Groq with candidate models

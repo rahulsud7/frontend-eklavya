@@ -3,6 +3,8 @@ import { Mic, MicOff, Square, Volume2, Sparkles, MessageSquare, AlertCircle, Rad
 import { LanguageMode } from '../../types';
 import { queryMentorApi } from '../../services/api';
 import { AudioWaveform } from '../AudioWaveform';
+import { FormattedMessage } from '../FormattedMessage';
+import { speakTextChunked } from '../../utils/speechFormatter';
 
 interface VoiceTabProps {
   userId: string;
@@ -29,6 +31,7 @@ export const VoiceTab: React.FC<VoiceTabProps> = ({
   const [speechError, setSpeechError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const stopSpeechRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -129,53 +132,34 @@ export const VoiceTab: React.FC<VoiceTabProps> = ({
     }
   };
 
-  // Crucial Prompt Requirement: Chunk response by sentences to prevent browser thread freeze!
+  // Natural spoken audio chunked by sentences (zero raw Markdown/LaTeX)
   const speakResponseChunked = (rawText: string) => {
     if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-
-    const cleanText = rawText
-      .replace(/\*\*/g, '')
-      .replace(/###/g, '')
-      .replace(/🎯 Active-Recall Checkpoint[\s\S]*/i, '')
-      .replace(/\$\$[\s\S]*?\$\$/g, 'Formula')
-      .replace(/\$[^$]+\$/g, 'Formula');
-
-    const sentenceChunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-
-    if (sentenceChunks.length === 0) return;
-
+    stopAudio();
     setIsPlayingAudio(true);
 
-    sentenceChunks.forEach((chunk, index) => {
-      const utterance = new SpeechSynthesisUtterance(chunk.trim());
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      if (language === 'Hindi') {
-        utterance.lang = 'hi-IN';
+    stopSpeechRef.current = speakTextChunked(rawText, language, {
+      onChunkStart: (chunk) => {
+        setCurrentSpokenChunk(chunk);
+      },
+      onEnd: () => {
+        setIsPlayingAudio(false);
+        setCurrentSpokenChunk('');
+        stopSpeechRef.current = null;
+      },
+      onError: () => {
+        setIsPlayingAudio(false);
+        setCurrentSpokenChunk('');
+        stopSpeechRef.current = null;
       }
-
-      utterance.onstart = () => {
-        setCurrentSpokenChunk(chunk.trim());
-      };
-
-      if (index === sentenceChunks.length - 1) {
-        utterance.onend = () => {
-          setIsPlayingAudio(false);
-          setCurrentSpokenChunk('');
-        };
-        utterance.onerror = () => {
-          setIsPlayingAudio(false);
-          setCurrentSpokenChunk('');
-        };
-      }
-
-      window.speechSynthesis.speak(utterance);
     });
   };
 
   const stopAudio = () => {
-    if ('speechSynthesis' in window) {
+    if (stopSpeechRef.current) {
+      stopSpeechRef.current();
+      stopSpeechRef.current = null;
+    } else if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     setIsPlayingAudio(false);
@@ -340,7 +324,11 @@ export const VoiceTab: React.FC<VoiceTabProps> = ({
                 <div className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">
                   {log.role === 'student' ? 'Student' : 'Eklavya Voice'}
                 </div>
-                <div className="whitespace-pre-wrap">{log.text}</div>
+                {log.role === 'student' ? (
+                  <div className="whitespace-pre-wrap">{log.text}</div>
+                ) : (
+                  <FormattedMessage content={log.text} />
+                )}
               </div>
             ))}
           </div>
