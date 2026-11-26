@@ -39,8 +39,11 @@ const HF_TOKEN = process.env.HF_TOKEN || '';
 const HF_API_URL = 'https://router.huggingface.co/hf-inference/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2';
 let hfInferenceOperational = Boolean(HF_TOKEN);
 
-// In-memory cache for recent document chunks
+// In-memory caches for recent document chunks, metadata, and suggested questions
 const LATEST_CHUNKS_CACHE: Record<string, string[]> = {};
+const DOC_CHUNKS_CACHE: Record<string, string[]> = {};
+const DOC_META_CACHE: Record<string, { title: string; filename: string; subject: string }> = {};
+const SUGGESTED_QUESTIONS_CACHE: Record<string, { questions: string[]; groundedInPdf: boolean; ts: number }> = {};
 
 // Fallback Gemini Client
 const geminiApiKey = process.env.GEMINI_API_KEY || '';
@@ -366,6 +369,10 @@ async function startServer() {
     const { docId } = req.params;
     const { custom_name } = req.body;
 
+    if (custom_name && DOC_META_CACHE[docId]) {
+      DOC_META_CACHE[docId].title = custom_name;
+    }
+
     if (supabase && custom_name) {
       try {
         await supabase
@@ -383,7 +390,7 @@ async function startServer() {
   // 5. Document Upload: POST /api/upload
   app.post('/api/upload', upload.single('file'), async (req: Request, res: Response) => {
     try {
-      const { user_id, subject = 'General' } = req.body;
+      const { user_id, subject = 'General', custom_name } = req.body;
       const file = req.file;
 
       if (!file) {
@@ -391,23 +398,56 @@ async function startServer() {
         return;
       }
 
-      // Extract text from PDF buffer
+      const resolvedTitle = (custom_name && String(custom_name).trim()) || file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+      // Extract real text from PDF buffer (supports pdf-parse v2 PDFParse class and v1 function)
       let extractedText = '';
       try {
-        // Dynamic import for pdf-parse compatibility
-        const pdfParseModule = await import('pdf-parse');
-        const pdfParser = (pdfParseModule as any).default || pdfParseModule;
-        const pdfData = await pdfParser(file.buffer);
-        extractedText = pdfData.text || '';
+        const pdfParseModule: any = await import('pdf-parse');
+        if (typeof pdfParseModule.PDFParse === 'function') {
+          const parser = new pdfParseModule.PDFParse({ data: new Uint8Array(file.buffer) });
+          const pdfData = await parser.getText();
+          extractedText = pdfData?.text || '';
+          if (typeof parser.destroy === 'function') {
+            await parser.destroy().catch(() => {});
+          }
+        } else {
+          const pdfParser = pdfParseModule.default || pdfParseModule;
+          if (typeof pdfParser === 'function') {
+            const pdfData = await pdfParser(file.buffer);
+            extractedText = pdfData?.text || '';
+          }
+        }
       } catch (pdfErr: any) {
-        console.warn('PDF parser notice, extracting plain text buffer:', pdfErr.message);
-        extractedText = file.buffer.toString('utf-8', 0, Math.min(file.buffer.length, 50000));
+        console.warn('PDF parser notice, checking plain text fallback:', pdfErr.message);
+        const rawUtf8 = file.buffer.toString('utf-8', 0, Math.min(file.buffer.length, 50000));
+        // Avoid caching raw binary PDF headers as readable textbook text
+        extractedText = rawUtf8.startsWith('%PDF-') ? '' : rawUtf8;
       }
 
       const newDocId = `doc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+      const chunks = extractedText.trim() ? chunkText(extractedText) : [];
+
+      const cacheDocumentLocally = (docId: string) => {
+        if (chunks.length > 0) {
+          DOC_CHUNKS_CACHE[docId] = chunks;
+          LATEST_CHUNKS_CACHE[subject] = chunks;
+          LATEST_CHUNKS_CACHE['latest'] = chunks;
+        }
+        DOC_META_CACHE[docId] = {
+          title: resolvedTitle,
+          filename: file.originalname,
+          subject
+        };
+        // Clear stale cached suggestions for this subject/doc so freshly uploaded PDF gets brand-new questions
+        for (const key of Object.keys(SUGGESTED_QUESTIONS_CACHE)) {
+          if (key.startsWith(`${subject}::`) || key.includes(`::${docId}::`)) {
+            delete SUGGESTED_QUESTIONS_CACHE[key];
+          }
+        }
+      };
 
       if (supabase) {
-        // Ensure profile exists
         try {
           const profileCheck = await supabase.from('profiles').select('user_id').eq('user_id', user_id);
           if (!profileCheck.data || profileCheck.data.length === 0) {
@@ -427,39 +467,37 @@ async function startServer() {
           const docRes = await supabase.from('user_documents').insert({
             user_id,
             filename: file.originalname,
-            custom_name: file.originalname,
+            custom_name: resolvedTitle,
             subject
           }).select();
 
           const createdId = docRes.data?.[0]?.id || newDocId;
-
-          // Chunk text
-          const chunks = chunkText(extractedText);
-          LATEST_CHUNKS_CACHE[subject] = chunks;
-          LATEST_CHUNKS_CACHE['latest'] = chunks;
+          cacheDocumentLocally(createdId);
 
           // Compute embeddings and store in curriculum_documents
-          const records = [];
-          for (const chunk of chunks.slice(0, 50)) { // limit to first 50 chunks for quick ingestion
-            const vector = await getEmbedding(chunk);
-            records.push({
-              user_id,
-              subject,
-              doc_id: createdId,
-              content: chunk,
-              embedding: vector
-            });
-          }
+          if (chunks.length > 0) {
+            const records = [];
+            for (const chunk of chunks.slice(0, 50)) {
+              const vector = await getEmbedding(chunk);
+              records.push({
+                user_id,
+                subject,
+                doc_id: createdId,
+                content: chunk,
+                embedding: vector
+              });
+            }
 
-          if (records.length > 0) {
-            await supabase.from('curriculum_documents').insert(records);
+            if (records.length > 0) {
+              await supabase.from('curriculum_documents').insert(records);
+            }
           }
 
           res.json({
             status: 'success',
             filename: file.originalname,
             doc_id: createdId,
-            total_chunks: chunks.length
+            total_chunks: chunks.length || 1
           });
           return;
         } catch (dbErr: any) {
@@ -468,15 +506,13 @@ async function startServer() {
       }
 
       // Memory cache fallback
-      const chunks = chunkText(extractedText);
-      LATEST_CHUNKS_CACHE[subject] = chunks;
-      LATEST_CHUNKS_CACHE['latest'] = chunks;
+      cacheDocumentLocally(newDocId);
 
       res.json({
         status: 'success',
         filename: file.originalname,
         doc_id: newDocId,
-        total_chunks: chunks.length
+        total_chunks: chunks.length || 1
       });
     } catch (err: any) {
       console.error('Upload processing error:', err.message);
@@ -518,6 +554,31 @@ async function startServer() {
         }
       }
 
+      // Check freshly uploaded per-doc cache first when a specific doc_id is selected
+      if (!context && doc_id && DOC_CHUNKS_CACHE[doc_id]) {
+        context = DOC_CHUNKS_CACHE[doc_id].slice(0, 4).join('\n---\n');
+        matches = DOC_CHUNKS_CACHE[doc_id].slice(0, 2).map((_, idx) => ({
+          id: `${DOC_META_CACHE[doc_id]?.title || 'Uploaded PDF'} [Chunk #${idx + 1}]`
+        }));
+      }
+
+      // Direct Supabase fallback by doc_id if vector RPC returned nothing (e.g. recently uploaded PDF)
+      if (!context && doc_id && supabase) {
+        try {
+          const directDocs = await supabase
+            .from('curriculum_documents')
+            .select('id, content')
+            .eq('doc_id', doc_id)
+            .limit(4);
+          if (directDocs.data && directDocs.data.length > 0) {
+            matches = directDocs.data;
+            context = directDocs.data.map((m: any) => m.content).join('\n---\n');
+          }
+        } catch {
+          // non-blocking
+        }
+      }
+
       // If no vector matches found, use cached document chunks if available
       if (!context && subject && LATEST_CHUNKS_CACHE[subject]) {
         context = LATEST_CHUNKS_CACHE[subject].slice(0, 3).join('\n---\n');
@@ -525,19 +586,37 @@ async function startServer() {
         context = LATEST_CHUNKS_CACHE['latest'].slice(0, 3).join('\n---\n');
       }
 
+      const normalizedLang = (language || 'Hinglish').trim().toLowerCase();
+      const devanagariRegex = /[\u0900-\u097F]/;
+      const hinglishMarkersRegex = /\b(hai|hain|hota|hoti|hote|ka|ki|ke|ko|mein|me|se|aur|kya|yeh|ye|toh|to|karo|karke|karte|karta|jaise|matlab|samajh|samjho|chaliye|isme|iska|iski|iske|bhi|nahi|par|agar|lekin|kyunki|bahut|pehle|baad|yahan|wahan|hum|aap|tum|dono|sabse|baaki|liye|sakta|sakti)\b/gi;
+
+      const countHinglishMarkers = (text: string): number => {
+        const plain = text
+          .replace(/```[\s\S]*?```/g, ' ')
+          .replace(/\$\$[\s\S]*?\$\$/g, ' ')
+          .replace(/\\\[[\s\S]*?\\\]/g, ' ')
+          .replace(/\$[^$\n]+\$/g, ' ');
+        const hits = plain.match(hinglishMarkersRegex);
+        return hits ? hits.length : 0;
+      };
+
       const getLanguageDirective = (lang: string): string => {
-        const normalized = (lang || '').trim().toLowerCase();
-        if (normalized === 'hinglish') {
+        const norm = (lang || '').trim().toLowerCase();
+        if (norm === 'hinglish') {
           return (
-            'STRICT HINGLISH MODE: Write ONLY in Romanized Hindi mixed naturally with English using the Latin alphabet (A-Z, a-z). ' +
-            'NEVER output Devanagari / Hindi Unicode script anywhere in your answer, headings, formulas, or Active-Recall Checkpoint. ' +
-            'Example style: "Pythagoras theorem ke according, right-angled triangle mein hypotenuse ka square baaki dono sides ke squares ke sum ke equal hota hai."'
+            'STRICT HINGLISH MODE: You MUST explain conversationally in Romanized Hindi mixed with English technical terms using ONLY the Latin alphabet (A-Z, a-z). ' +
+            'Every single explanatory sentence MUST sound like an Indian teacher speaking Hinglish (using words like "hai", "hota hai", "mein", "se", "aur", "toh", "iska", "samjho", "karo") — NEVER reply in pure English! ' +
+            'And NEVER output Devanagari / Hindi Unicode script anywhere in your answer, headings, or Active-Recall Checkpoint. ' +
+            'Example style: "Pythagoras theorem ke according, kisi bhi right-angled triangle mein hypotenuse ka square baaki dono sides ke squares ke sum ke equal hota hai."'
           );
         }
-        if (normalized === 'hindi') {
-          return 'STRICT HINDI MODE: Write naturally in Devanagari Hindi (हिन्दी), keeping standard mathematical symbols, chemical formulas, and key English technical terms in parentheses when helpful.';
+        if (norm === 'hindi') {
+          return (
+            'STRICT HINDI MODE: You MUST write the entire explanation, headings, bullet points, and Active-Recall Checkpoint in natural Devanagari Hindi (हिन्दी). ' +
+            'Do NOT answer in English paragraphs. Keep mathematical formulas, chemical symbols, and standard technical terms in parentheses when helpful.'
+          );
         }
-        if (normalized === 'english') {
+        if (norm === 'english') {
           return 'STRICT ENGLISH MODE: Write strictly in clear, standard academic English. Do not mix in Hindi or Devanagari words.';
         }
         return `Write clearly in ${lang || 'English'}.`;
@@ -549,7 +628,7 @@ async function startServer() {
         "You are 'Eklavya AI', an encouraging 1-on-1 academic mentor for Indian students.\n" +
         `CURRENT REQUESTED LANGUAGE MODE: ${language}\n` +
         `${languageDirective}\n` +
-        `CRITICAL LANGUAGE OVERRIDE: You MUST respond strictly in ${language} following the rule above, EVEN IF earlier messages in the conversation history or the student's question were written in Hindi (Devanagari) or a different language. Never copy the script or language of older turns.\n` +
+        `CRITICAL LANGUAGE OVERRIDE: You MUST respond strictly in ${language} following the rule above, EVEN IF earlier messages in the conversation history or the student's question were written in English, Hindi, or another language. Never copy the language of older turns.\n` +
         "Formatting & Pedagogical Rules:\n" +
         "1. Ground your explanation strictly in the Context when available. If textbook context is brief, provide a thorough, accurate CBSE/ICSE curriculum explanation.\n" +
         "2. Format your response cleanly using standard Markdown (## and ### section headings, bullet points, numbered steps, Markdown tables for comparisons, and **bold** for key concepts).\n" +
@@ -560,27 +639,34 @@ async function startServer() {
         "Answer: [Concise correct answer and 1-line derivation/explanation in the CURRENT language mode]";
 
       const messages: any[] = [{ role: 'system', content: systemPrompt }];
-      const normalizedLang = language.trim().toLowerCase();
-      const devanagariRegex = /[\u0900-\u097F]/;
 
-      const recentHistory = Array.isArray(history) ? history.slice(-4) : [];
-      const historyHasScriptMismatch = recentHistory.some((turn: any) => {
+      const recentHistory = (Array.isArray(history) ? history : [])
+        .map((turn: any) => ({
+          role: turn?.role,
+          text: String(turn?.text ?? turn?.content ?? '').trim()
+        }))
+        .filter((turn: { role: any; text: string }) => turn.text.length > 0)
+        .slice(-4);
+
+      const historyHasLanguageMismatch = recentHistory.some((turn) => {
         const isAssistant = turn.role !== 'student' && turn.role !== 'user';
         if (!isAssistant) return false;
-        const hasDev = devanagariRegex.test(String(turn.text || ''));
-        if (normalizedLang === 'hinglish' || normalizedLang === 'english') return hasDev;
+        const txt = turn.text;
+        const hasDev = devanagariRegex.test(txt);
+        const hinglishScore = countHinglishMarkers(txt);
         if (normalizedLang === 'hindi') return !hasDev;
+        if (normalizedLang === 'hinglish') return hasDev || hinglishScore < 3;
+        if (normalizedLang === 'english') return hasDev || hinglishScore >= 5;
         return false;
       });
 
       let foldedHistoryNote = '';
       if (recentHistory.length > 0) {
-        if (historyHasScriptMismatch) {
-          // Fold prior turns into a neutral reference note so the LLM never copies the old assistant script
+        if (historyHasLanguageMismatch) {
           foldedHistoryNote =
-            'Previous Conversation Context (TOPIC CONTINUITY ONLY — DO NOT copy the old language or script):\n' +
+            'Previous Conversation Context (TOPIC CONTINUITY ONLY — DO NOT copy its language or script):\n' +
             recentHistory
-              .map((t: any) => `${t.role === 'student' || t.role === 'user' ? 'Student' : 'Mentor'}: ${String(t.text || '').slice(0, 400)}`)
+              .map((t) => `${t.role === 'student' || t.role === 'user' ? 'Student' : 'Mentor'}: ${t.text.slice(0, 350)}`)
               .join('\n') +
             '\n\n';
         } else {
@@ -595,13 +681,58 @@ async function startServer() {
 
       const turnLanguageReminder =
         normalizedLang === 'hinglish'
-          ? '[CRITICAL OUTPUT LANGUAGE: Hinglish — Reply strictly in Romanized Hindi + English using ONLY Latin letters (A-Z). ZERO Devanagari script, even if earlier messages were in Hindi!]'
+          ? '[CRITICAL OUTPUT LANGUAGE: Hinglish — Reply in natural conversational Romanized Hindi + English (e.g. "Yeh formula aise kaam karta hai...") using ONLY Latin letters (A-Z). Do NOT reply in pure English and do NOT use Devanagari script!]'
+          : normalizedLang === 'hindi'
+          ? '[CRITICAL OUTPUT LANGUAGE: Hindi (हिन्दी) — Reply strictly in Devanagari Hindi script (हिन्दी). Do NOT reply in English!]'
           : `[CRITICAL OUTPUT LANGUAGE: ${language} — Strictly follow this language mode and override any language used in previous turns.]`;
 
       messages.push({
         role: 'user',
         content: `${foldedHistoryNote}Context from Textbook:\n${context ? context : 'Use NCERT / Indian Board curriculum knowledge.'}\n\nStudent Question: ${query}\n\n${turnLanguageReminder}`
       });
+
+      // Helper to verify & enforce target language on generated answer
+      const enforceOutputLanguage = async (rawAnswer: string, modelToUse: string): Promise<string> => {
+        if (!groqClient || !rawAnswer.trim()) return rawAnswer;
+
+        const hasDev = devanagariRegex.test(rawAnswer);
+        const hinglishScore = countHinglishMarkers(rawAnswer);
+
+        let rewriteInstruction: string | null = null;
+        if (normalizedLang === 'hindi' && !hasDev) {
+          rewriteInstruction =
+            'Translate and rewrite the following tutor explanation into natural, fluent Devanagari Hindi (हिन्दी) for Indian CBSE/ICSE students. ' +
+            'Preserve ALL Markdown headings, tables, bullet points, LaTeX math ($...$ and $$...$$), and the 🎯 Active-Recall Checkpoint section (with Question: and Answer: labels).';
+        } else if (normalizedLang === 'hinglish' && (hasDev || hinglishScore < 3)) {
+          rewriteInstruction =
+            'Rewrite the following tutor explanation into natural, friendly Romanized Hinglish (Hindi written in English/Latin letters mixed with English technical terms, e.g., "Is formula ka use karke hum roots nikaal sakte hain"). ' +
+            'Make sure every explanatory sentence naturally uses Romanized Hindi phrasing (not pure English!). ' +
+            'Preserve ALL Markdown headings, tables, bullet points, LaTeX math ($...$ and $$...$$), and the 🎯 Active-Recall Checkpoint section (with Question: and Answer: labels). ' +
+            'Output ZERO Devanagari Unicode characters.';
+        } else if (normalizedLang === 'english' && (hasDev || hinglishScore >= 5)) {
+          rewriteInstruction =
+            'Rewrite the following tutor explanation into clear, standard academic English. ' +
+            'Preserve ALL Markdown headings, tables, bullet points, LaTeX math ($...$ and $$...$$), and the 🎯 Active-Recall Checkpoint section.';
+        }
+
+        if (!rewriteInstruction) return rawAnswer;
+
+        try {
+          const rewrite = await groqClient.chat.completions.create({
+            model: modelToUse,
+            messages: [
+              { role: 'system', content: rewriteInstruction },
+              { role: 'user', content: rawAnswer }
+            ],
+            temperature: 0.25
+          });
+          const rewritten = rewrite.choices[0]?.message?.content || '';
+          if (rewritten.trim()) return rewritten;
+        } catch {
+          // fallback to raw answer
+        }
+        return rawAnswer;
+      };
 
       // 2. Primary: Execute via Groq (with model fallback)
       if (groqClient) {
@@ -623,32 +754,7 @@ async function startServer() {
 
             answerText = completion.choices[0]?.message?.content || '';
             if (answerText.trim()) {
-              // Safeguard: if Hinglish was requested and model still leaked Devanagari, romanize once
-              if (normalizedLang === 'hinglish' && devanagariRegex.test(answerText)) {
-                try {
-                  const rewrite = await groqClient.chat.completions.create({
-                    model,
-                    messages: [
-                      {
-                        role: 'system',
-                        content:
-                          'Rewrite the following tutor explanation into natural Romanized Hinglish (Hindi written in English/Latin letters mixed with English). ' +
-                          'Preserve ALL Markdown headings, tables, bullet points, LaTeX math ($...$ and $$...$$), and the 🎯 Active-Recall Checkpoint section exactly. ' +
-                          'Output ZERO Devanagari characters.'
-                      },
-                      { role: 'user', content: answerText }
-                    ],
-                    temperature: 0.2
-                  });
-                  const rewritten = rewrite.choices[0]?.message?.content || '';
-                  if (rewritten.trim() && !devanagariRegex.test(rewritten)) {
-                    answerText = rewritten;
-                  }
-                } catch {
-                  // Keep original answer if rewrite fails
-                }
-              }
-
+              answerText = await enforceOutputLanguage(answerText, model);
               res.json({
                 answer: answerText,
                 sources: matches.map(item => item.id || `NCERT ${subject} Vault chunk`)
@@ -664,10 +770,9 @@ async function startServer() {
       // 3. Secondary Backup: Gemini AI
       if (geminiAi) {
         try {
-          const historyText = Array.isArray(history) && history.length > 0
+          const historyText = recentHistory.length > 0
             ? '\n\nRecent Conversation Context (for topic continuity only; DO NOT copy its language):\n' +
-              history
-                .slice(-4)
+              recentHistory
                 .map((t: any) => `${t.role === 'student' || t.role === 'user' ? 'Student' : 'Mentor'}: ${t.text}`)
                 .join('\n')
             : '';
@@ -698,6 +803,174 @@ async function startServer() {
 
   app.post('/api/query', handleQuery);
   app.post('/api/mentor/query', handleQuery);
+
+  // 6b. Dynamic Subject & PDF Recommended Questions: POST /api/suggested-questions
+  app.post('/api/suggested-questions', async (req: Request, res: Response) => {
+    const {
+      subject = 'Mathematics',
+      doc_id = null,
+      doc_title = '',
+      doc_filename = '',
+      available_docs = [],
+      language = 'Hinglish',
+      forceRefresh = false
+    } = req.body || {};
+
+    try {
+      let excerptChunks: string[] = [];
+      let resolvedTitle = String(doc_title || '').trim();
+
+      if (doc_id && DOC_META_CACHE[doc_id] && !resolvedTitle) {
+        resolvedTitle = DOC_META_CACHE[doc_id].title;
+      }
+
+      // 1. Prioritize chunks from the exact selected/recently uploaded PDF
+      if (doc_id && DOC_CHUNKS_CACHE[doc_id]?.length) {
+        excerptChunks = DOC_CHUNKS_CACHE[doc_id].slice(0, 3);
+      } else if (doc_id && supabase) {
+        try {
+          const docRows = await supabase
+            .from('curriculum_documents')
+            .select('content')
+            .eq('doc_id', doc_id)
+            .limit(3);
+          if (docRows.data && docRows.data.length > 0) {
+            excerptChunks = docRows.data.map((r: any) => String(r.content || '')).filter(Boolean);
+          }
+        } catch {
+          // fallback below
+        }
+      }
+
+      // 2. If entire subject is selected, gather chunks from that subject's recent PDFs
+      if (excerptChunks.length === 0 && !doc_id) {
+        if (LATEST_CHUNKS_CACHE[subject]?.length) {
+          excerptChunks = LATEST_CHUNKS_CACHE[subject].slice(0, 2);
+        } else if (supabase) {
+          try {
+            const subjRows = await supabase
+              .from('curriculum_documents')
+              .select('content')
+              .eq('subject', subject)
+              .limit(3);
+            if (subjRows.data && subjRows.data.length > 0) {
+              excerptChunks = subjRows.data.map((r: any) => String(r.content || '')).filter(Boolean);
+            }
+          } catch {
+            // fallback below
+          }
+        }
+      }
+
+      const excerptText = excerptChunks.join('\n---\n').slice(0, 2800);
+      const fingerprint = `${excerptText.length}:${excerptText.slice(0, 80)}`;
+      const availableTitles = Array.isArray(available_docs)
+        ? available_docs.slice(0, 6).map((d: any) => d.title || d.custom_name).filter(Boolean).join(', ')
+        : '';
+
+      const cacheKey = `${subject}::${doc_id || 'all'}::${resolvedTitle || availableTitles}::${language}::${fingerprint}`;
+
+      if (!forceRefresh && SUGGESTED_QUESTIONS_CACHE[cacheKey]) {
+        const cached = SUGGESTED_QUESTIONS_CACHE[cacheKey];
+        res.json({
+          questions: cached.questions,
+          grounded_in_pdf: cached.groundedInPdf
+        });
+        return;
+      }
+
+      const normLang = String(language).trim().toLowerCase();
+      const langPrompt =
+        normLang === 'hinglish'
+          ? 'Hinglish (strictly Romanized Hindi + English using ONLY Latin letters A-Z, ZERO Devanagari script, e.g. "Is chapter mein Ohm law kaise derive hota hai?")'
+          : normLang === 'hindi'
+          ? 'natural Devanagari Hindi (हिन्दी)'
+          : 'clear academic English';
+
+      const docContextDesc = resolvedTitle
+        ? `Selected PDF Chapter: "${resolvedTitle}" (file: ${doc_filename || 'uploaded.pdf'}) under Subject: ${subject}`
+        : availableTitles
+        ? `Subject: ${subject} (Uploaded chapters in vault: ${availableTitles})`
+        : `Subject: ${subject}`;
+
+      const suggestionPrompt =
+        `You are Eklavya AI, an Indian academic mentor. Generate exactly 4 concise, engaging, high-value study questions that a student can click to ask right now.\n` +
+        `${docContextDesc}\n` +
+        `Language for the 4 questions: ${langPrompt}\n` +
+        (excerptText
+          ? `ACTUAL EXTRACTED PDF EXCERPT (ground your 4 questions specifically in topics, concepts, equations, or facts from this text!):\n${excerptText}\n`
+          : `Ground the 4 questions specifically in the chapter title and ${subject} syllabus.\n`) +
+        `Rules:\n` +
+        `- Each question must be 6 to 15 words long, specific, and clickable.\n` +
+        `- Mix conceptual understanding, derivations/numericals (if Maths/Science), and exam-style questions.\n` +
+        `- Return ONLY strictly valid JSON: {"questions": ["Question 1?", "Question 2?", "Question 3?", "Question 4?"]}`;
+
+      const groundedInPdf = Boolean(excerptText.trim() || resolvedTitle);
+
+      if (groqClient) {
+        const candidateModels = [
+          process.env.MODEL_RAG_TUTOR || 'openai/gpt-oss-120b',
+          'openai/gpt-oss-20b'
+        ];
+        for (const model of candidateModels) {
+          try {
+            const completion = await groqClient.chat.completions.create({
+              model,
+              messages: [
+                { role: 'system', content: 'Output strictly valid JSON with a "questions" array of 4 strings. No extra commentary.' },
+                { role: 'user', content: suggestionPrompt }
+              ],
+              temperature: forceRefresh ? 0.7 : 0.4
+            });
+            const raw = completion.choices[0]?.message?.content || '';
+            const parsed = extractJson(raw);
+            if (Array.isArray(parsed?.questions) && parsed.questions.length >= 2) {
+              const cleaned = parsed.questions
+                .map((q: any) => String(q || '').trim())
+                .filter(Boolean)
+                .slice(0, 4);
+              if (cleaned.length > 0) {
+                SUGGESTED_QUESTIONS_CACHE[cacheKey] = {
+                  questions: cleaned,
+                  groundedInPdf,
+                  ts: Date.now()
+                };
+                res.json({ questions: cleaned, grounded_in_pdf: groundedInPdf });
+                return;
+              }
+            }
+          } catch (mErr: any) {
+            console.warn(`Suggested questions model ${model} notice:`, mErr?.message);
+          }
+        }
+      }
+
+      if (geminiAi) {
+        try {
+          const geminiRes = await geminiAi.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: suggestionPrompt,
+            config: { responseMimeType: 'application/json' }
+          });
+          if (geminiRes.text) {
+            const parsed = JSON.parse(geminiRes.text);
+            if (Array.isArray(parsed?.questions) && parsed.questions.length > 0) {
+              const cleaned = parsed.questions.map((q: any) => String(q).trim()).filter(Boolean).slice(0, 4);
+              SUGGESTED_QUESTIONS_CACHE[cacheKey] = { questions: cleaned, groundedInPdf, ts: Date.now() };
+              res.json({ questions: cleaned, grounded_in_pdf: groundedInPdf });
+              return;
+            }
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      res.status(503).json({ error: 'Could not generate dynamic questions' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to generate suggested questions' });
+    }
+  });
 
   // 7. Study Tools Generation: POST /api/study-tools
   app.post('/api/study-tools', async (req: Request, res: Response) => {

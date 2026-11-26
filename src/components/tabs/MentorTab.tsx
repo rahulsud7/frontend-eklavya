@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { ChatMessage, LanguageMode, DocumentItem } from '../../types';
 import { FormattedMessage } from '../FormattedMessage';
-import { queryMentorApi } from '../../services/api';
+import { queryMentorApi, getSuggestedQuestionsApi, buildLocalSuggestedQuestions } from '../../services/api';
 import { GuruAvatar3D } from '../GuruAvatar3D';
 import { AudioWaveform } from '../AudioWaveform';
 import { ConceptMap } from '../ConceptMap';
@@ -240,6 +240,11 @@ Answer: A single reactant (lead nitrate) breaks down under heat energy into thre
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const stopSpeechRef = useRef<(() => void) | null>(null);
+  const languageRef = useRef<LanguageMode>(language);
+
+  useEffect(() => {
+    languageRef.current = language;
+  }, [language]);
 
   useEffect(() => {
     return () => {
@@ -251,6 +256,91 @@ Answer: A single reactant (lead nitrate) breaks down under heat energy into thre
   }, []);
 
   const activeDoc = documents.find(d => d.id === activeDocId);
+
+  // Dynamic recommended questions grounded in active subject, selected PDF, and recently uploaded PDFs
+  const [recommendedQuestions, setRecommendedQuestions] = useState<string[]>(() =>
+    buildLocalSuggestedQuestions({
+      subject: activeSubject,
+      docTitle: activeDoc?.custom_name,
+      language
+    })
+  );
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState<boolean>(false);
+  const [questionsGroundedInPdf, setQuestionsGroundedInPdf] = useState<boolean>(Boolean(activeDoc));
+
+  const fetchRecommendedQuestions = async (forceRefresh = false) => {
+    const subjectDocs = documents
+      .filter(d => d.subject.toLowerCase() === activeSubject.toLowerCase())
+      .map(d => ({ id: d.id, title: d.custom_name, subject: d.subject }));
+
+    // Immediately show tailored local suggestions while AI refines with actual PDF content
+    if (!forceRefresh) {
+      setRecommendedQuestions(
+        buildLocalSuggestedQuestions({
+          subject: activeSubject,
+          docTitle: activeDoc?.custom_name,
+          language
+        })
+      );
+    }
+
+    setIsLoadingQuestions(true);
+    try {
+      const res = await getSuggestedQuestionsApi({
+        user_id: userId,
+        subject: activeSubject,
+        doc_id: activeDocId,
+        doc_title: activeDoc?.custom_name || null,
+        doc_filename: activeDoc?.filename || null,
+        available_docs: subjectDocs,
+        language,
+        forceRefresh
+      });
+      setRecommendedQuestions(res.questions);
+      setQuestionsGroundedInPdf(res.groundedInPdf);
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const subjectDocs = documents
+        .filter(d => d.subject.toLowerCase() === activeSubject.toLowerCase())
+        .map(d => ({ id: d.id, title: d.custom_name, subject: d.subject }));
+
+      setRecommendedQuestions(
+        buildLocalSuggestedQuestions({
+          subject: activeSubject,
+          docTitle: activeDoc?.custom_name,
+          language
+        })
+      );
+      setIsLoadingQuestions(true);
+      try {
+        const res = await getSuggestedQuestionsApi({
+          user_id: userId,
+          subject: activeSubject,
+          doc_id: activeDocId,
+          doc_title: activeDoc?.custom_name || null,
+          doc_filename: activeDoc?.filename || null,
+          available_docs: subjectDocs,
+          language
+        });
+        if (!cancelled) {
+          setRecommendedQuestions(res.questions);
+          setQuestionsGroundedInPdf(res.groundedInPdf);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingQuestions(false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSubject, activeDocId, activeDoc?.custom_name, activeDoc?.filename, documents.length, language, userId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -354,17 +444,22 @@ Answer: A single reactant (lead nitrate) breaks down under heat energy into thre
     setMentorState('thinking');
 
     try {
-      const historyPayload = messages.slice(-6).map(m => ({
-        role: m.role,
-        text: m.text
-      }));
+      const currentLanguage = languageRef.current;
+      // Exclude the English welcome greeting so it never biases Hindi/Hinglish replies toward English
+      const historyPayload = messages
+        .filter(m => !m.id.startsWith('welcome-'))
+        .slice(-6)
+        .map(m => ({
+          role: m.role,
+          text: m.text
+        }));
 
       const res = await queryMentorApi({
         user_id: userId,
         subject: activeSubject,
         doc_id: activeDocId,
         query: textToSend.trim(),
-        language: language,
+        language: currentLanguage,
         history: historyPayload
       });
 
@@ -512,29 +607,6 @@ Please review your inquiry parameters and retry!
       onSelectDocId(docId, subject);
     }
   };
-
-  // Suggested curriculum prompt buttons
-  const curriculumPrompts =
-    activeSubject === 'Mathematics'
-      ? [
-          'Prove Pythagoras theorem step by step',
-          'Solve 2x² - 5x + 3 = 0 using quadratic formula',
-          'If sin θ + cos θ = √2 cos θ, prove cos θ - sin θ = √2 sin θ',
-          'Derive the distance formula using coordinates'
-        ]
-      : activeSubject === 'Science'
-      ? [
-          'Explain observations when Lead Nitrate crystals are heated',
-          'Differentiate concave vs convex mirrors with ray diagram',
-          'Explain the role of Bile Juice and Pancreatic Lipase in digestion',
-          'Why do stars twinkle while planets do not?'
-        ]
-      : [
-          'Explain the rise of nationalism in Europe and the Zollverein union',
-          'Why did Gandhiji choose Salt as the central symbol for the Dandi March?',
-          'Describe the characteristics and distribution of Black Regur soil in India',
-          'Explain the powers and functions of the Election Commission of India'
-        ];
 
   return (
     <div className="flex flex-col h-[calc(100vh-13rem)] min-h-[620px] bg-white/75 backdrop-blur-md rounded-3xl border border-[#8C6D23]/20 shadow-xl overflow-hidden relative text-left transition-colors duration-300">
@@ -858,14 +930,30 @@ Please review your inquiry parameters and retry!
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Suggested Curriculum Inquiries */}
+          {/* Dynamic Recommended Questions grounded in Subject & Selected/Uploaded PDFs */}
           <div className="px-4 py-2.5 bg-stone-50/80 border-t border-stone-200/60 overflow-x-auto flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-stone-400 whitespace-nowrap shrink-0">
-              CBSE Questions:
-            </span>
-            {curriculumPrompts.map((prompt, idx) => (
+            <div className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+              <Sparkles className="w-3.5 h-3.5 text-[#8C6D23]" />
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-stone-500">
+                {activeDoc
+                  ? `PDF Questions (${activeDoc.custom_name.slice(0, 22)}${activeDoc.custom_name.length > 22 ? '…' : ''}):`
+                  : questionsGroundedInPdf
+                  ? `${activeSubject} PDF Questions:`
+                  : `${activeSubject} Questions:`}
+              </span>
               <button
-                key={idx}
+                type="button"
+                onClick={() => fetchRecommendedQuestions(true)}
+                disabled={isLoadingQuestions}
+                className="p-1 rounded-lg text-stone-400 hover:text-[#284E38] hover:bg-stone-200/60 transition-colors cursor-pointer disabled:opacity-40"
+                title="Refresh recommended questions from selected subject & PDF"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingQuestions ? 'animate-spin text-[#8C6D23]' : ''}`} />
+              </button>
+            </div>
+            {recommendedQuestions.map((prompt, idx) => (
+              <button
+                key={`${idx}-${prompt.slice(0, 20)}`}
                 type="button"
                 onClick={() => handleSendMessage(prompt)}
                 className="text-xs px-3 py-1.5 rounded-xl bg-white border border-stone-200/80 hover:border-[#8C6D23] text-stone-700 hover:text-[#284E38] whitespace-nowrap shrink-0 transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"

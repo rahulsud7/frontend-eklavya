@@ -21,6 +21,7 @@ import { UserProfile, DocumentItem, LanguageMode } from './types';
 import {
   syncUserApi,
   getDocumentsApi,
+  getLocalDocuments,
   checkBackendHealth,
   DEFAULT_USER
 } from './services/api';
@@ -79,7 +80,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('mentor');
   const [activeSubject, setActiveSubject] = useState<string>('Mathematics');
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
-  const [language, setLanguage] = useState<LanguageMode>('Hinglish');
+  const [language, setLanguage] = useState<LanguageMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('eklavya_language');
+      if (saved === 'Hinglish' || saved === 'Hindi' || saved === 'English') {
+        return saved;
+      }
+    }
+    return 'Hinglish';
+  });
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -348,7 +357,12 @@ export default function App() {
         activeDocId={activeDocId}
         onDocChange={(docId) => setActiveDocId(docId)}
         language={language}
-        onLanguageChange={(lang) => setLanguage(lang)}
+        onLanguageChange={(lang) => {
+          setLanguage(lang);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('eklavya_language', lang);
+          }
+        }}
         isBackendConnected={isBackendConnected}
         onBackendReconnect={async () => {
           const live = await checkBackendHealth();
@@ -451,7 +465,8 @@ export default function App() {
               activeSubject={activeSubject}
               documents={documents}
               onRefreshDocs={() => {
-                initApp();
+                setDocuments(getLocalDocuments(user.user_id));
+                getDocumentsApi(user.user_id).then(docs => setDocuments(docs));
                 handleGrantXp(25);
               }}
               onGrantXp={handleGrantXp}

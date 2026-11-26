@@ -364,16 +364,17 @@ export const uploadDocumentApi = async (
   const updatedDocs = [newDoc, ...currentDocs.filter(d => d.id !== docId)];
   saveLocalDocuments(updatedDocs);
 
-  // 3. Prepare FormData for FastAPI backend
+  // 3. Prepare FormData for FastAPI / Full-Stack backend
   const formData = new FormData();
   formData.append('user_id', userId);
   formData.append('subject', subject);
+  formData.append('custom_name', resolvedName);
   formData.append('file', file);
 
   try {
     const response = await axios.post(`${getApiBaseUrl()}/api/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 10000
+      timeout: 25000
     });
     isBackendLive = true;
 
@@ -735,11 +736,11 @@ export const queryMentorApi = async (payload: {
 
   // 1. Try local full-stack server route first (/api/mentor/query)
   try {
-    const localRes = await axios.post('/api/mentor/query', payload, { timeout: 10000 });
+    const localRes = await axios.post('/api/mentor/query', payload, { timeout: 35000 });
     if (localRes.data?.answer) {
       isBackendLive = true;
       lastApiDebugLog = {
-        endpoint: 'POST /api/mentor/query [Full-Stack Gemini]',
+        endpoint: 'POST /api/mentor/query [Full-Stack LLM]',
         timestamp: new Date().toISOString(),
         requestPayload: payload,
         responseSummary: { answerLength: localRes.data.answer.length, sources: localRes.data.sources },
@@ -760,10 +761,10 @@ export const queryMentorApi = async (payload: {
     // Local route not available or static deployment; fall through to remote backend
   }
 
-  // 2. Try remote configured backend (${baseUrl}/api/query)
+  // 2. Try remote configured backend (${baseUrl}/api/query) if distinct from current origin
   try {
     const response = await axios.post(`${baseUrl}/api/query`, payload, {
-      timeout: 12000
+      timeout: 35000
     });
     isBackendLive = true;
     lastApiDebugLog = {
@@ -811,6 +812,172 @@ export const queryMentorApi = async (payload: {
       }
     };
   }
+};
+
+// 6b. Dynamic Subject & PDF Recommended Questions: POST /api/suggested-questions
+export function buildLocalSuggestedQuestions(params: {
+  subject: string;
+  docTitle?: string | null;
+  language: LanguageMode;
+}): string[] {
+  const { subject, docTitle, language } = params;
+  const cleanTitle = docTitle?.trim();
+
+  if (cleanTitle) {
+    if (language === 'Hindi') {
+      return [
+        `"${cleanTitle}" के मुख्य सिद्धांत और परिभाषाएँ सरल भाषा में समझाएँ`,
+        `"${cleanTitle}" के सबसे महत्वपूर्ण सूत्र और बोर्ड परीक्षा के प्रश्न बताएँ`,
+        `"${cleanTitle}" से एक हल किया हुआ उदाहरण (step-by-step) समझाएँ`,
+        `"${cleanTitle}" का त्वरित पुनरावृत्ति सारांश (quick revision summary) दें`
+      ];
+    }
+    if (language === 'Hinglish') {
+      return [
+        `"${cleanTitle}" ke core concepts aur key definitions simple Hinglish mein samjhao`,
+        `"${cleanTitle}" ke sabse important formulas aur exam questions batao`,
+        `"${cleanTitle}" ka ek step-by-step solved example ya derivation dikhao`,
+        `"${cleanTitle}" ka quick revision summary aur common mistakes batao`
+      ];
+    }
+    return [
+      `Explain the core concepts and key definitions from "${cleanTitle}"`,
+      `What are the most important formulas and exam questions in "${cleanTitle}"?`,
+      `Walk through a step-by-step derivation or solved example from "${cleanTitle}"`,
+      `Give a quick revision summary and common mistakes to avoid in "${cleanTitle}"`
+    ];
+  }
+
+  const subjLower = (subject || '').toLowerCase();
+  if (subjLower.includes('math')) {
+    if (language === 'Hindi') {
+      return [
+        'पाइथागोरस प्रमेय को चरण-दर-चरण सिद्ध करें',
+        'द्विघात सूत्र से 2x² - 5x + 3 = 0 हल करें',
+        'यदि sin θ + cos θ = √2 cos θ, तो सिद्ध करें cos θ - sin θ = √2 sin θ',
+        'निर्देशांक ज्यामिति में दूरी सूत्र व्युत्पन्न करें'
+      ];
+    }
+    if (language === 'Hinglish') {
+      return [
+        'Pythagoras theorem step by step Hinglish mein prove karo',
+        'Quadratic formula se 2x² - 5x + 3 = 0 solve karke dikhao',
+        'Agar sin θ + cos θ = √2 cos θ hai, toh cos θ - sin θ = √2 sin θ prove karo',
+        'Coordinate geometry ka distance formula simple example ke saath derive karo'
+      ];
+    }
+    return [
+      'Prove Pythagoras theorem step by step',
+      'Solve 2x² - 5x + 3 = 0 using the quadratic formula',
+      'If sin θ + cos θ = √2 cos θ, prove cos θ - sin θ = √2 sin θ',
+      'Derive the distance formula using coordinates'
+    ];
+  }
+
+  if (subjLower.includes('science') || subjLower.includes('phys') || subjLower.includes('chem') || subjLower.includes('bio')) {
+    if (language === 'Hindi') {
+      return [
+        'लेड नाइट्रेट क्रिस्टल को गर्म करने पर क्या अवलोकन होते हैं?',
+        'अवतल और उत्तल दर्पण में अंतर और किरण आरेख समझाएँ',
+        'पाचन में पित्त रस और अग्नाशयी लाइपेज की भूमिका समझाएँ',
+        'तारे क्यों टिमटिमाते हैं जबकि ग्रह नहीं?'
+      ];
+    }
+    if (language === 'Hinglish') {
+      return [
+        'Lead Nitrate crystals ko heat karne par kya observations aur equation hoti hai?',
+        'Concave aur convex mirror ka difference table aur ray diagram samjhao',
+        'Digestion mein Bile Juice aur Pancreatic Lipase ka exact role kya hota hai?',
+        'Stars kyun twinkle karte hain jabki planets nahi karte?'
+      ];
+    }
+    return [
+      'Explain observations when Lead Nitrate crystals are heated',
+      'Differentiate concave vs convex mirrors with ray diagram',
+      'Explain the role of Bile Juice and Pancreatic Lipase in digestion',
+      'Why do stars twinkle while planets do not?'
+    ];
+  }
+
+  if (subjLower.includes('social') || subjLower.includes('hist') || subjLower.includes('geo') || subjLower.includes('civics')) {
+    if (language === 'Hindi') {
+      return [
+        'यूरोप में राष्ट्रवाद का उदय और ज़ोलवेराइन संघ समझाएँ',
+        'गांधीजी ने दांडी मार्च के लिए नमक को मुख्य प्रतीक क्यों चुना?',
+        'भारत में काली (रेगुर) मिट्टी की विशेषताएँ और वितरण बताएँ',
+        'भारत के चुनाव आयोग की शक्तियाँ और कार्य समझाएँ'
+      ];
+    }
+    if (language === 'Hinglish') {
+      return [
+        'Europe mein nationalism aur Zollverein customs union ka role samjhao',
+        'Gandhiji ne Dandi March ke liye Salt ko central symbol kyun chuna?',
+        'India mein Black Regur soil ki characteristics aur distribution batao',
+        'Election Commission of India ki key powers aur functions kya hain?'
+      ];
+    }
+    return [
+      'Explain the rise of nationalism in Europe and the Zollverein union',
+      'Why did Gandhiji choose Salt as the central symbol for the Dandi March?',
+      'Describe the characteristics and distribution of Black Regur soil in India',
+      'Explain the powers and functions of the Election Commission of India'
+    ];
+  }
+
+  if (language === 'Hindi') {
+    return [
+      `${subject} के सबसे महत्वपूर्ण अध्याय और मुख्य सिद्धांत समझाएँ`,
+      `${subject} के लिए बोर्ड परीक्षा में पूछे जाने वाले प्रमुख प्रश्न बताएँ`,
+      `${subject} की एक कठिन अवधारणा को दैनिक उदाहरण से समझाएँ`,
+      `${subject} के त्वरित पुनरावृत्ति नोट्स तैयार करें`
+    ];
+  }
+  if (language === 'Hinglish') {
+    return [
+      `${subject} ke sabse important core concepts simple Hinglish mein samjhao`,
+      `${subject} ke high-weightage exam questions aur key points batao`,
+      `${subject} ka koi mushkil topic real-life Indian analogy se samjhao`,
+      `${subject} ke liye quick revision notes banao`
+    ];
+  }
+  return [
+    `Explain the core concepts and foundations of ${subject}`,
+    `What are the highest-weightage exam topics in ${subject}?`,
+    `Explain a challenging ${subject} concept with a clear real-life analogy`,
+    `Create structured quick-revision notes for ${subject}`
+  ];
+}
+
+export const getSuggestedQuestionsApi = async (params: {
+  user_id: string;
+  subject: string;
+  doc_id?: string | null;
+  doc_title?: string | null;
+  doc_filename?: string | null;
+  available_docs?: Array<{ id: string; title: string; subject: string }>;
+  language: LanguageMode;
+  forceRefresh?: boolean;
+}): Promise<{ questions: string[]; groundedInPdf: boolean }> => {
+  try {
+    const res = await axios.post('/api/suggested-questions', params, { timeout: 15000 });
+    if (Array.isArray(res.data?.questions) && res.data.questions.length > 0) {
+      return {
+        questions: res.data.questions,
+        groundedInPdf: Boolean(res.data.grounded_in_pdf)
+      };
+    }
+  } catch {
+    // Fallback to smart local suggestions
+  }
+
+  return {
+    questions: buildLocalSuggestedQuestions({
+      subject: params.subject,
+      docTitle: params.doc_title,
+      language: params.language
+    }),
+    groundedInPdf: Boolean(params.doc_title)
+  };
 };
 
 // 7. Study Tools: POST /api/study-tools
@@ -1370,9 +1537,30 @@ Answer: Pehle apne mind mein key principle recall karo, phir NCERT chapter se cr
     };
   }
 
-  const langGreeting = language === 'Hindi' ? 'नमस्ते विद्यार्थी!' : 'Hello student!';
+  if (language === 'Hindi') {
+    return {
+      answer: `**नमस्ते विद्यार्थी!** आइए **"${query}"** को आपके **${subject}** एनसीईआरटी (NCERT) पाठ्यक्रम के अनुसार सरल और चरण-दर-चरण तरीके से समझते हैं।
+
+### 1. मुख्य अवधारणा और परिभाषा
+यह विषय भारतीय बोर्ड परीक्षाओं (CBSE/ICSE) के लिए अत्यंत महत्वपूर्ण है। ${subject} में रटने के बजाय मूल सिद्धांत (first principles) को समझना बेहतर अंक दिलाता है।
+
+### 2. व्यवस्थित विश्लेषण
+1. **मूल नियम की पहचान**: इस प्रश्न को सीधे NCERT अध्याय के प्रमुख सिद्धांत या सूत्र से जोड़ें।
+2. **चरण-दर-चरण प्रक्रिया**: कारण से परिणाम तक प्रत्येक चरण को स्पष्ट रूप से लिखें और मानक इकाइयों (SI units) का उल्लेख करें।
+3. **बोर्ड परीक्षा लेखन रणनीति**: मुख्य परिभाषाओं को रेखांकित करें और जहाँ आवश्यक हो वहाँ स्वच्छ नामांकित आरेख बनाएँ।
+
+🎯 Active-Recall Checkpoint
+Question: क्या आप बिना पुस्तक देखे इस विषय का सबसे महत्वपूर्ण नियम या सूत्र याद करके लिख सकते हैं?
+Answer: पहले अपने मन में मुख्य सिद्धांत दोहराएँ, फिर अपनी NCERT पाठ्यपुस्तक से मिलान करें।`,
+      sources: [
+        `NCERT Class 10 ${subject} Curriculum Standard`,
+        'CBSE Academic Board Exemplar Vector Vault'
+      ]
+    };
+  }
+
   return {
-    answer: `${langGreeting} Let us review **"${query}"** in the context of your **${subject}** syllabus.
+    answer: `**Hello student!** Let us review **"${query}"** in the context of your **${subject}** syllabus.
 
 ### 1. Conceptual Framework & Definition
 This inquiry addresses fundamental core principles evaluated in Indian board examinations (CBSE/ICSE) and competitive entrance tests. In studying ${subject}, breaking problems into first principles prevents rote memorization.
